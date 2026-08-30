@@ -1,0 +1,11 @@
+[Unit]
+Description=astrapi-admin-agent: Policy vom astrapi-admin-Server abrufen und anwenden
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Kein User= -- Systemd-Systemdienste laufen ohne diese Direktive als root,
+# was der Agent fuer Pakete/Services/Config-Dateien braucht (siehe
+# astrapi_admin_agent.cli._require_root()).
+ExecStart=/usr/bin/astrapi-admin-agent apply

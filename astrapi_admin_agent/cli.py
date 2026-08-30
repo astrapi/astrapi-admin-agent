@@ -1,5 +1,6 @@
 # astrapi_admin_agent/cli.py
 import argparse
+import os
 import socket
 import sys
 
@@ -9,6 +10,17 @@ from astrapi_admin_agent import apply as applymod
 from astrapi_admin_agent import config as cfgmod
 from astrapi_admin_agent.api_client import ApiClient
 from astrapi_admin_agent.osinfo import detect_os_type
+
+
+def _require_root(action: str) -> bool:
+    """Prueft frueh statt erst beim ersten fehlschlagenden Syscall --
+    bei 'pair' insbesondere, damit der einmalige Pairing-Code nicht schon
+    beim Server eingeloest wird, bevor klar ist, dass die Konfiguration
+    danach gar nicht gespeichert werden kann."""
+    if os.geteuid() == 0:
+        return True
+    print(f"Muss als root laufen (z.B. mit sudo) -- {action}.", file=sys.stderr)
+    return False
 
 
 def _server_detail(response: httpx.Response) -> str:
@@ -32,6 +44,9 @@ def _format_error(exc: Exception) -> str:
 
 
 def cmd_pair(args) -> int:
+    if not _require_root("die Konfiguration wird sonst nach dem Pairing nicht gespeichert"):
+        return 1
+
     hostname = args.hostname or socket.gethostname()
     os_type = args.os_type or detect_os_type()
 
@@ -63,6 +78,9 @@ def cmd_pair(args) -> int:
 
 
 def cmd_apply(args) -> int:
+    if not _require_root("Pakete/Services/Config-Dateien lassen sich sonst nicht anwenden"):
+        return 1
+
     cfg = cfgmod.load()
     if not cfg.get("host_token"):
         print("Noch nicht gekoppelt -- siehe 'astrapi-admin-agent pair'.", file=sys.stderr)

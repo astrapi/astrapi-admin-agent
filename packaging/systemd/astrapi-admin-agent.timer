@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodischer astrapi-admin-agent-Lauf
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
