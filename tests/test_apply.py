@@ -93,6 +93,43 @@ def test_apply_policy_config_absent_entfernt_aus_managed_paths(monkeypatch):
     assert "/etc/foo.conf" not in saved["managed_paths"]
 
 
+def test_apply_policy_before_packages_config_datei_laeuft_vor_dem_paket_install(monkeypatch):
+    """Am echten LXC entdeckt: eine Paketquelle (config_files-Eintrag) muss
+    VOR dem Paket-Install stehen, sonst kennt der Paketmanager die Quelle
+    noch nicht, wenn er das Paket sucht."""
+    _patched_state(monkeypatch)
+    call_order = []
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: False)
+    monkeypatch.setattr(
+        applymod.pkg,
+        "install",
+        lambda names, backend: (call_order.append("packages_present"), (True, ""))[1],
+    )
+
+    def _fake_enforce(cf):
+        call_order.append(f"config_{cf['path']}")
+        return "changed", "geschrieben"
+
+    monkeypatch.setattr(applymod.files, "enforce", _fake_enforce)
+
+    applymod.apply_policy(
+        _policy(
+            packages_present=["caddy"],
+            config_files=[
+                {"path": "/etc/apt/sources.list.d/caddy.sources", "action": "enforce", "before_packages": True},
+                {"path": "/etc/caddy/Caddyfile", "action": "enforce"},
+            ],
+        )
+    )
+
+    assert call_order == [
+        "config_/etc/apt/sources.list.d/caddy.sources",
+        "packages_present",
+        "config_/etc/caddy/Caddyfile",
+    ]
+
+
 def test_apply_policy_ein_fehlschlag_blockiert_nicht_die_naechste_phase(monkeypatch):
     _patched_state(monkeypatch)
     monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "pacman")

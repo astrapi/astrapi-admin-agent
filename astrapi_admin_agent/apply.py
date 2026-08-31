@@ -2,9 +2,18 @@
 """Wendet eine vom Server aufgeloeste Policy lokal an -- in aufsteigendem
 Risiko, wie im Rollout-Plan festgelegt:
 
+  0. Config-Dateien mit before_packages=true (Paketquellen -- muessen
+     VOR den Paketen stehen, sonst kennt "pacman -S"/"apt-get install"
+     die Quelle noch nicht. Am echten LXC entdeckt: eine Caddy-Apt-Quelle
+     wurde erst NACH dem Paket-Install-Versuch geschrieben -- unbemerkt,
+     weil auf diesem Host zufaellig schon vorher eine andere Quelle fuer
+     "caddy" konfiguriert war. Nur fuer Dateien geeignet, die keine erst
+     durch das Paket angelegte Owner-Gruppe brauchen -- deshalb eine
+     eigene, fruehe Phase statt alle Config-Dateien einfach vorzuziehen.)
   1. Pakete praesent      (risikoarm, gebuendelter Installationsaufruf)
   2. Services praesent    (enabled_started/enabled/started)
-  3. Config-Dateien enforce
+  3. Uebrige Config-Dateien enforce (koennen z.B. owner=<vom-Paket-
+     angelegter-User> nutzen, da die Pakete zu diesem Zeitpunkt schon da sind)
   4. Abwesenheit, separiert und zuletzt:
        Pakete absent, Services disabled/disabled_stopped/stopped,
        Config-Dateien absent
@@ -70,6 +79,24 @@ def _apply_services(svcs: list[dict], state_filter: set, out: list[dict]) -> boo
     return all_ok
 
 
+def _apply_config_files_enforce(
+    config_files: list[dict], out: list[dict], managed_paths: list[str], before_packages: bool
+) -> bool:
+    all_ok = True
+    for cf in config_files:
+        if cf.get("action") != "enforce":
+            continue
+        if bool(cf.get("before_packages")) != before_packages:
+            continue
+        status, detail = files.enforce(cf)
+        out.append({"path": cf["path"], "action": "enforce", "status": status, "detail": detail})
+        if status == "changed" and cf["path"] not in managed_paths:
+            managed_paths.append(cf["path"])
+        if status == "failed":
+            all_ok = False
+    return all_ok
+
+
 def apply_policy(policy: dict) -> dict:
     st = statemod.load()
     managed_paths = list(st.get("managed_paths", []))
@@ -80,27 +107,24 @@ def apply_policy(policy: dict) -> dict:
     config_files_out: list[dict] = []
     ok = True
 
+    config_files = policy.get("config_files", [])
+
+    # 0) Config-Dateien, die VOR den Paketen stehen muessen (Paketquellen)
+    ok &= _apply_config_files_enforce(config_files, config_files_out, managed_paths, before_packages=True)
+
     # 1) Pakete praesent
     ok &= _apply_packages_present(policy.get("packages_present", []), backend, packages_out)
 
     # 2) Services praesent
     ok &= _apply_services(policy.get("services", []), services.PRESENCE_STATES, services_out)
 
-    # 3) Config-Dateien enforce
-    for cf in policy.get("config_files", []):
-        if cf.get("action") != "enforce":
-            continue
-        status, detail = files.enforce(cf)
-        config_files_out.append({"path": cf["path"], "action": "enforce", "status": status, "detail": detail})
-        if status == "changed" and cf["path"] not in managed_paths:
-            managed_paths.append(cf["path"])
-        if status == "failed":
-            ok = False
+    # 3) Uebrige Config-Dateien enforce
+    ok &= _apply_config_files_enforce(config_files, config_files_out, managed_paths, before_packages=False)
 
     # 4) Abwesenheit -- separiert, zuletzt
     ok &= _apply_packages_absent(policy.get("packages_absent", []), backend, packages_out)
     ok &= _apply_services(policy.get("services", []), services.ABSENCE_STATES, services_out)
-    for cf in policy.get("config_files", []):
+    for cf in config_files:
         if cf.get("action") != "absent":
             continue
         status, detail = files.remove_if_managed(cf["path"], managed_paths)
