@@ -106,3 +106,16 @@ def test_remove_if_managed_ist_ok_wenn_bereits_weg(tmp_path):
 
     assert status == "ok"
     assert detail == "bereits entfernt"
+
+
+def test_remove_if_managed_nie_existenter_unbekannter_pfad_ist_kein_konflikt(tmp_path):
+    """Ein Pfad, der nie existiert hat UND nie in managed_paths stand
+    (z.B. ein Mirror-Repo, das nie ausgewaehlt war), ist kein
+    Fremdbesitz-Konflikt -- am echten Host beobachtet: sonst meldet
+    apply() faelschlich 'drift' fuer jede nie angelegte Datei."""
+    path = tmp_path / "nie-existiert.conf"
+
+    status, detail = files.remove_if_managed(str(path), managed_paths=[])
+
+    assert status == "ok"
+    assert detail == "bereits entfernt"

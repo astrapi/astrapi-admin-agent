@@ -12,7 +12,9 @@ ein bewusster, expliziter Opt-out pro Datei, keine Abschaffung der
 Schutzregel selbst (Default bleibt geschuetzt). Geloescht wird bei
 action=absent weiterhin nur, was astrapi-admin selbst angelegt hat
 (managed_paths im lokalen State, siehe state.py) -- nie eine fremde
-oder vorbestehende Datei, `force` gilt nur fuer action=enforce."""
+oder vorbestehende Datei, `force` gilt nur fuer action=enforce. Ein
+NICHT existierender Pfad ist dabei nie ein Konflikt, egal ob er je in
+managed_paths stand -- siehe remove_if_managed()."""
 import grp
 import os
 import pwd
@@ -83,11 +85,18 @@ def enforce(cf: dict) -> tuple[str, str]:
 
 
 def remove_if_managed(path: str, managed_paths: list[str]) -> tuple[str, str]:
-    if path not in managed_paths:
-        return "skipped_conflict", f"{path} wurde nicht von astrapi-admin angelegt -- nicht gelöscht"
+    """Existenz zuerst pruefen, unabhaengig von managed_paths: ein Pfad,
+    der nie existiert hat (z.B. ein Mirror-Repo, das nie ausgewaehlt
+    war), ist kein Fremdbesitz-Konflikt, sondern schlicht nichts zu tun
+    -- sonst meldet astrapi-admin-agent bei jedem apply faelschlich
+    'drift' fuer jede bloss nie angelegte Datei (am echten Host
+    beobachtet: 19 nie ausgewaehlte Mirror-Repos wurden als
+    skipped_conflict gemeldet, obwohl keine von ihnen je existierte)."""
     p = Path(path)
     if not p.exists():
         return "ok", "bereits entfernt"
+    if path not in managed_paths:
+        return "skipped_conflict", f"{path} wurde nicht von astrapi-admin angelegt -- nicht gelöscht"
     try:
         p.unlink()
     except OSError as e:
