@@ -1,22 +1,17 @@
 # astrapi_admin_agent/apply.py
-"""Wendet eine vom Server aufgeloeste Policy lokal an -- in aufsteigendem
-Risiko, wie im Rollout-Plan festgelegt:
+"""Wendet eine vom Server aufgeloeste Policy lokal an.
 
-  0. Config-Dateien mit before_packages=true (Paketquellen -- muessen
-     VOR den Paketen stehen, sonst kennt "pacman -S"/"apt-get install"
-     die Quelle noch nicht. Am echten LXC entdeckt: eine Caddy-Apt-Quelle
-     wurde erst NACH dem Paket-Install-Versuch geschrieben -- unbemerkt,
-     weil auf diesem Host zufaellig schon vorher eine andere Quelle fuer
-     "caddy" konfiguriert war. Nur fuer Dateien geeignet, die keine erst
-     durch das Paket angelegte Owner-Gruppe brauchen -- deshalb eine
-     eigene, fruehe Phase statt alle Config-Dateien einfach vorzuziehen.)
-  1. Pakete praesent      (risikoarm, gebuendelter Installationsaufruf)
-  2. Services praesent    (enabled_started/enabled/started)
-  3. Uebrige Config-Dateien enforce (koennen z.B. owner=<vom-Paket-
-     angelegter-User> nutzen, da die Pakete zu diesem Zeitpunkt schon da sind)
+Bewusst KEINE Paketinstallation/-entfernung mehr (siehe E-004,
+astrapi-hub-Vault): der Agent prueft nur noch, ob ein benoetigtes Paket
+bereits installiert ist -- fehlt es, wird das als Fehler gemeldet statt
+selbst zu installieren. Paketverwaltung (inkl. Paketquellen) bleibt
+ausserhalb von astrapi-admin, manueller Schritt des Nutzers.
+
+  1. Pakete-Check    (nur pruefen, nicht installieren)
+  2. Config-Dateien enforce
+  3. Services praesent (enabled_started/enabled/started)
   4. Abwesenheit, separiert und zuletzt:
-       Pakete absent, Services disabled/disabled_stopped/stopped,
-       Config-Dateien absent
+       Services disabled/disabled_stopped/stopped, Config-Dateien absent
 
 Jede Phase baut nicht auf einer vorherigen auf -- ein Fehlschlag in einer
 Phase blockiert nicht die naechste, wird aber im Gesamtergebnis (ok=False)
@@ -25,45 +20,25 @@ from astrapi_admin_agent import files, pkg, services
 from astrapi_admin_agent import state as statemod
 
 
-def _apply_packages_present(names: list[str], backend: str, out: list[dict]) -> bool:
-    if not backend:
-        for name in names:
+def _check_packages_required(names: list[str], backend: str, out: list[dict]) -> bool:
+    all_ok = True
+    for name in names:
+        if not backend:
+            out.append(
+                {"name": name, "status": "failed", "detail": "kein unterstützter Paket-Manager gefunden"}
+            )
+            all_ok = False
+        elif pkg.is_installed(name, backend):
+            out.append({"name": name, "status": "ok"})
+        else:
             out.append(
                 {
                     "name": name,
-                    "action": "present",
                     "status": "failed",
-                    "detail": "kein unterstützter Paket-Manager gefunden",
+                    "detail": f"Paket '{name}' ist nicht installiert -- wird nicht automatisch installiert",
                 }
             )
-        return not names
-
-    missing = [n for n in names if not pkg.is_installed(n, backend)]
-    for name in names:
-        if name not in missing:
-            out.append({"name": name, "action": "present", "status": "ok"})
-
-    if not missing:
-        return True
-
-    ok, output = pkg.install(missing, backend)
-    status = "changed" if ok else "failed"
-    for name in missing:
-        out.append({"name": name, "action": "present", "status": status, "detail": "" if ok else output})
-    return ok
-
-
-def _apply_packages_absent(names: list[str], backend: str, out: list[dict]) -> bool:
-    all_ok = True
-    for name in names:
-        if not backend or not pkg.is_installed(name, backend):
-            out.append({"name": name, "action": "absent", "status": "ok"})
-            continue
-        ok, output = pkg.remove_one(name, backend)
-        out.append(
-            {"name": name, "action": "absent", "status": "changed" if ok else "failed", "detail": "" if ok else output}
-        )
-        all_ok = all_ok and ok
+            all_ok = False
     return all_ok
 
 
@@ -79,14 +54,10 @@ def _apply_services(svcs: list[dict], state_filter: set, out: list[dict]) -> boo
     return all_ok
 
 
-def _apply_config_files_enforce(
-    config_files: list[dict], out: list[dict], managed_paths: list[str], before_packages: bool
-) -> bool:
+def _apply_config_files_enforce(config_files: list[dict], out: list[dict], managed_paths: list[str]) -> bool:
     all_ok = True
     for cf in config_files:
         if cf.get("action") != "enforce":
-            continue
-        if bool(cf.get("before_packages")) != before_packages:
             continue
         status, detail = files.enforce(cf)
         out.append({"path": cf["path"], "action": "enforce", "status": status, "detail": detail})
@@ -109,20 +80,16 @@ def apply_policy(policy: dict) -> dict:
 
     config_files = policy.get("config_files", [])
 
-    # 0) Config-Dateien, die VOR den Paketen stehen muessen (Paketquellen)
-    ok &= _apply_config_files_enforce(config_files, config_files_out, managed_paths, before_packages=True)
+    # 1) Pakete-Check (nur pruefen)
+    ok &= _check_packages_required(policy.get("packages_required", []), backend, packages_out)
 
-    # 1) Pakete praesent
-    ok &= _apply_packages_present(policy.get("packages_present", []), backend, packages_out)
+    # 2) Config-Dateien enforce
+    ok &= _apply_config_files_enforce(config_files, config_files_out, managed_paths)
 
-    # 2) Services praesent
+    # 3) Services praesent
     ok &= _apply_services(policy.get("services", []), services.PRESENCE_STATES, services_out)
 
-    # 3) Uebrige Config-Dateien enforce
-    ok &= _apply_config_files_enforce(config_files, config_files_out, managed_paths, before_packages=False)
-
     # 4) Abwesenheit -- separiert, zuletzt
-    ok &= _apply_packages_absent(policy.get("packages_absent", []), backend, packages_out)
     ok &= _apply_services(policy.get("services", []), services.ABSENCE_STATES, services_out)
     for cf in config_files:
         if cf.get("action") != "absent":

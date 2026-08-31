@@ -1,14 +1,14 @@
 """apply.py: Orchestrierung der vier Phasen -- insbesondere dass Abwesenheit
-(Pakete/Services/Config-Dateien absent) immer zuletzt und unabhaengig von
-der Praesenz-Phase laeuft, ein Fehlschlag eine Phase nicht blockiert, und
-summarize() die richtige Statuspriorität ableitet."""
+(Services/Config-Dateien absent) immer zuletzt und unabhaengig von der
+Praesenz-Phase laeuft, ein Fehlschlag eine Phase nicht blockiert, und
+summarize() die richtige Statuspriorität ableitet. Pakete werden seit E-004
+nur noch auf Anwesenheit GEPRUEFT, nie installiert/entfernt."""
 from astrapi_admin_agent import apply as applymod
 
 
 def _policy(**overrides):
     base = {
-        "packages_present": [],
-        "packages_absent": [],
+        "packages_required": [],
         "services": [],
         "config_files": [],
         "conflicts": [],
@@ -25,49 +25,82 @@ def _patched_state(monkeypatch, managed_paths=None):
     return state, saved
 
 
-def test_apply_policy_installiert_nur_fehlende_pakete(monkeypatch):
+def test_apply_policy_meldet_vorhandene_pakete_als_ok(monkeypatch):
     _patched_state(monkeypatch)
     monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "pacman")
     monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: name == "vim")
-    installed = {}
-    monkeypatch.setattr(applymod.pkg, "install", lambda names, backend: (installed.setdefault("names", names), (True, ""))[1])
 
-    result = applymod.apply_policy(_policy(packages_present=["vim", "htop"]))
+    result = applymod.apply_policy(_policy(packages_required=["vim", "htop"]))
 
-    assert installed["names"] == ["htop"]
     statuses = {p["name"]: p["status"] for p in result["packages"]}
-    assert statuses == {"vim": "ok", "htop": "changed"}
+    assert statuses == {"vim": "ok", "htop": "failed"}
+    assert result["ok"] is False
+
+
+def test_apply_policy_fehlendes_paket_wird_nicht_installiert(monkeypatch):
+    """Kernverhalten seit E-004: kein pkg.install()-Aufruf mehr -- ein
+    fehlendes Paket ist ein reiner Fehlerfall, keine Aktion."""
+    _patched_state(monkeypatch)
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: False)
+    assert not hasattr(applymod.pkg, "install")
+
+    result = applymod.apply_policy(_policy(packages_required=["caddy"]))
+
+    assert result["packages"] == [
+        {
+            "name": "caddy",
+            "status": "failed",
+            "detail": "Paket 'caddy' ist nicht installiert -- wird nicht automatisch installiert",
+        }
+    ]
+
+
+def test_apply_policy_config_dateien_laufen_vor_services(monkeypatch):
+    _patched_state(monkeypatch)
+    call_order = []
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "")
+    monkeypatch.setattr(applymod.files, "enforce", lambda cf: (call_order.append("config"), ("changed", "geschrieben"))[1])
+    monkeypatch.setattr(
+        applymod.services,
+        "apply_state",
+        lambda name, state: (call_order.append(f"service_{state}"), (True, "ok"))[1],
+    )
+
+    applymod.apply_policy(
+        _policy(
+            config_files=[{"path": "/etc/caddy/Caddyfile", "action": "enforce"}],
+            services=[{"name": "caddy", "state": "enabled_started"}],
+        )
+    )
+
+    assert call_order == ["config", "service_enabled_started"]
 
 
 def test_apply_policy_abwesenheit_laeuft_nach_praesenz(monkeypatch):
-    """Dasselbe Paket taucht (theoretisch) nicht gleichzeitig in present und
-    absent auf, aber die Reihenfolge selbst muss stimmen: absent-Pakete
-    duerfen nicht vor der services-Praesenz-Phase drankommen."""
     _patched_state(monkeypatch)
     call_order = []
-    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "pacman")
-    # htop fehlt noch (-> present-Phase installiert), telnet ist noch da (-> absent-Phase entfernt)
-    monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: name == "telnet")
-    monkeypatch.setattr(applymod.pkg, "install", lambda names, backend: (call_order.append("packages_present"), (True, ""))[1])
-    monkeypatch.setattr(applymod.pkg, "remove_one", lambda name, backend: (call_order.append("packages_absent"), (True, ""))[1])
-    monkeypatch.setattr(applymod.services, "apply_state", lambda name, state: (call_order.append(f"service_{state}"), (True, "ok"))[1])
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "")
+    monkeypatch.setattr(
+        applymod.services,
+        "apply_state",
+        lambda name, state: (call_order.append(f"service_{state}"), (True, "ok"))[1],
+    )
 
-    applymod.apply_policy(_policy(
-        packages_present=["htop"],
-        packages_absent=["telnet"],
-        services=[{"name": "nginx", "state": "enabled_started"}, {"name": "telnetd", "state": "disabled_stopped"}],
-    ))
+    applymod.apply_policy(
+        _policy(
+            services=[{"name": "nginx", "state": "enabled_started"}, {"name": "telnetd", "state": "disabled_stopped"}],
+        )
+    )
 
-    assert call_order.index("packages_present") < call_order.index("packages_absent")
     assert call_order.index("service_enabled_started") < call_order.index("service_disabled_stopped")
-    assert call_order.index("packages_present") < call_order.index("service_disabled_stopped")
 
 
 def test_apply_policy_ohne_backend_meldet_alle_pakete_failed(monkeypatch):
     _patched_state(monkeypatch)
     monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "")
 
-    result = applymod.apply_policy(_policy(packages_present=["htop"]))
+    result = applymod.apply_policy(_policy(packages_required=["htop"]))
 
     assert result["ok"] is False
     assert result["packages"][0]["status"] == "failed"
@@ -93,52 +126,14 @@ def test_apply_policy_config_absent_entfernt_aus_managed_paths(monkeypatch):
     assert "/etc/foo.conf" not in saved["managed_paths"]
 
 
-def test_apply_policy_before_packages_config_datei_laeuft_vor_dem_paket_install(monkeypatch):
-    """Am echten LXC entdeckt: eine Paketquelle (config_files-Eintrag) muss
-    VOR dem Paket-Install stehen, sonst kennt der Paketmanager die Quelle
-    noch nicht, wenn er das Paket sucht."""
-    _patched_state(monkeypatch)
-    call_order = []
-    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
-    monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: False)
-    monkeypatch.setattr(
-        applymod.pkg,
-        "install",
-        lambda names, backend: (call_order.append("packages_present"), (True, ""))[1],
-    )
-
-    def _fake_enforce(cf):
-        call_order.append(f"config_{cf['path']}")
-        return "changed", "geschrieben"
-
-    monkeypatch.setattr(applymod.files, "enforce", _fake_enforce)
-
-    applymod.apply_policy(
-        _policy(
-            packages_present=["caddy"],
-            config_files=[
-                {"path": "/etc/apt/sources.list.d/caddy.sources", "action": "enforce", "before_packages": True},
-                {"path": "/etc/caddy/Caddyfile", "action": "enforce"},
-            ],
-        )
-    )
-
-    assert call_order == [
-        "config_/etc/apt/sources.list.d/caddy.sources",
-        "packages_present",
-        "config_/etc/caddy/Caddyfile",
-    ]
-
-
 def test_apply_policy_ein_fehlschlag_blockiert_nicht_die_naechste_phase(monkeypatch):
     _patched_state(monkeypatch)
     monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "pacman")
     monkeypatch.setattr(applymod.pkg, "is_installed", lambda name, backend: False)
-    monkeypatch.setattr(applymod.pkg, "install", lambda names, backend: (False, "Netzwerkfehler"))
     monkeypatch.setattr(applymod.files, "enforce", lambda cf: ("changed", "geschrieben"))
 
     result = applymod.apply_policy(_policy(
-        packages_present=["htop"],
+        packages_required=["htop"],
         config_files=[{"path": "/etc/foo.conf", "action": "enforce"}],
     ))
 
