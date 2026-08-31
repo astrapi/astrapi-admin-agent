@@ -27,6 +27,23 @@ def test_enforce_ueberschreibt_fremdbesessenen_pfad_nicht(tmp_path):
     assert path.read_text() == "original\n"
 
 
+def test_enforce_mit_force_ueberschreibt_fremdbesessenen_pfad(tmp_path):
+    """Expliziter Opt-out pro Datei (force: true) -- z.B. ein Template wie
+    "Caddy", das bewusst die vom Paket mitgelieferte Platzhalter-Caddyfile
+    ersetzen soll. Bleibt ein bewusster Ausnahmefall, kein Abschaffen der
+    Schutzregel selbst (siehe die Tests ohne force oben/unten)."""
+    path = tmp_path / "Caddyfile"
+    path.write_text("platzhalter\n")
+    cf = _cf(path, content="eigene-config\n")
+    cf["force"] = True
+
+    with patch("astrapi_admin_agent.files.is_package_owned", return_value=True):
+        status, detail = files.enforce(cf)
+
+    assert status == "changed"
+    assert path.read_text() == "eigene-config\n"
+
+
 def test_enforce_schreibt_neue_datei(tmp_path):
     path = tmp_path / "sub" / "config.conf"
 

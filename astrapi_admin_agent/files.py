@@ -2,11 +2,17 @@
 """Config-Datei-Durchsetzung.
 
 Fremd besessene Pfade (von einem Paket verwaltet, z.B. /etc/vimrc) werden
-NIE ueberschrieben -- genau das Problem, das bei den vim-config-Paketen
-heute schon aufgetreten ist, hier von Anfang an eingeplant. Geloescht
-wird bei action=absent nur, was astrapi-admin selbst angelegt hat
+per Default NIE ueberschrieben -- genau das Problem, das bei den
+vim-config-Paketen heute schon aufgetreten ist, hier von Anfang an
+eingeplant. Ein Policy-/Template-Eintrag kann das ueber `force: true`
+explizit aufheben (Nutzerentscheidung: eigenes, single-owner Setup, ein
+Template wie "Caddy" bringt bewusst eine eigene Caddyfile mit und soll
+die vom Paket mitgelieferte Platzhalter-Datei ersetzen duerfen) -- das ist
+ein bewusster, expliziter Opt-out pro Datei, keine Abschaffung der
+Schutzregel selbst (Default bleibt geschuetzt). Geloescht wird bei
+action=absent weiterhin nur, was astrapi-admin selbst angelegt hat
 (managed_paths im lokalen State, siehe state.py) -- nie eine fremde
-oder vorbestehende Datei."""
+oder vorbestehende Datei, `force` gilt nur fuer action=enforce."""
 import grp
 import os
 import pwd
@@ -49,7 +55,7 @@ def enforce(cf: dict) -> tuple[str, str]:
     {'ok', 'changed', 'skipped_conflict', 'failed'}."""
     path = Path(cf["path"])
 
-    if path.exists() and is_package_owned(str(path)):
+    if path.exists() and is_package_owned(str(path)) and not cf.get("force"):
         return "skipped_conflict", f"{path} wird von einem Paket verwaltet -- nicht überschrieben"
 
     mode = int(cf.get("mode", "0644"), 8)
