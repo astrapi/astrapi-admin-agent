@@ -8,6 +8,7 @@ import httpx
 
 from astrapi_admin_agent import apply as applymod
 from astrapi_admin_agent import config as cfgmod
+from astrapi_admin_agent import pkg
 from astrapi_admin_agent.api_client import ApiClient
 from astrapi_admin_agent.osinfo import detect_os_type
 
@@ -94,10 +95,40 @@ def cmd_apply(args) -> int:
         print(f"Policy-Abruf fehlgeschlagen: {_format_error(exc)}", file=sys.stderr)
         return 1
 
+    backend = pkg.detect_backend()
+
+    # Reiner Status-Check laeuft IMMER, unabhaengig von pending_action --
+    # billig, rein lesend, liefert die Update-Anzeige unabhaengig davon,
+    # ob je ein Update angestossen wird.
+    upgradable = pkg.list_upgradable(backend)
+
+    # Echtes Update NUR, wenn der Server das ueber pending_action explizit
+    # angefordert hat (E-007) -- laeuft vor der normalen Policy-Konvergenz,
+    # damit frisch installierte/aktualisierte Pakete in derselben Runde
+    # schon beruecksichtigt werden.
+    update_result = None
+    if policy.get("pending_action") == "update":
+        if backend:
+            ok, output = pkg.upgrade_all(backend)
+            update_result = {"ok": ok, "detail": output}
+        else:
+            update_result = {"ok": False, "detail": "kein unterstützter Paket-Manager gefunden"}
+        upgradable = pkg.list_upgradable(backend)
+
     result = applymod.apply_policy(policy)
     status, summary = applymod.summarize(policy, result)
 
+    result["updates_available"] = len(upgradable)
+    if update_result is not None:
+        result["update_result"] = update_result
+        if not update_result["ok"]:
+            status = "error"
+            summary = f"Update fehlgeschlagen -- {summary}" if summary != "keine Änderungen nötig" else "Update fehlgeschlagen"
+
     print(f"Status: {status} -- {summary}")
+    if update_result is not None:
+        print(f"  Update: {update_result}")
+    print(f"  Verfügbare Updates: {len(upgradable)}")
     for item in result["packages"] + result["services"] + result["config_files"]:
         if item["status"] != "ok":
             print(f"  {item}")

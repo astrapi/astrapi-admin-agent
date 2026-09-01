@@ -44,3 +44,69 @@ def test_cmd_apply_bricht_ohne_root_ab_vor_dem_config_laden():
 
     assert rc == 1
     mock_load.assert_not_called()
+
+
+def _mock_apply_run(policy: dict, upgradable: list[str] | None = None):
+    """Gemeinsames Mock-Setup fuer cmd_apply()-Tests -- root, Config,
+    ApiClient, Backend-Erkennung, Policy-Konvergenz sind alle gemockt,
+    nur pkg.list_upgradable()/upgrade_all() bleiben testrelevant."""
+    return (
+        patch("astrapi_admin_agent.cli.os.geteuid", return_value=0),
+        patch("astrapi_admin_agent.cli.cfgmod.load", return_value={"host_token": "tok", "server_url": "http://x"}),
+        patch("astrapi_admin_agent.cli.ApiClient.get_policy", return_value=policy),
+        patch("astrapi_admin_agent.cli.ApiClient.report", return_value={"ok": True}) ,
+        patch("astrapi_admin_agent.cli.pkg.detect_backend", return_value="apt"),
+        patch("astrapi_admin_agent.cli.pkg.list_upgradable", return_value=upgradable or []),
+        patch(
+            "astrapi_admin_agent.cli.applymod.apply_policy",
+            return_value={"packages": [], "services": [], "config_files": []},
+        ),
+    )
+
+
+def test_cmd_apply_ohne_pending_action_ruft_upgrade_all_nicht_auf():
+    patches = _mock_apply_run({"conflicts": []})
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+         patch("astrapi_admin_agent.cli.pkg.upgrade_all") as mock_upgrade:
+        rc = cli.cmd_apply(SimpleNamespace())
+
+    assert rc == 0
+    mock_upgrade.assert_not_called()
+
+
+def test_cmd_apply_mit_pending_action_ruft_upgrade_all_auf():
+    policy = {"conflicts": [], "pending_action": "update"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+         patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(True, "upgraded 3 packages")) as mock_upgrade, \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        rc = cli.cmd_apply(SimpleNamespace())
+
+    assert rc == 0
+    mock_upgrade.assert_called_once_with("apt")
+    sent_details = mock_report.call_args[0][2]
+    assert sent_details["update_result"] == {"ok": True, "detail": "upgraded 3 packages"}
+
+
+def test_cmd_apply_fehlgeschlagenes_update_setzt_status_error():
+    policy = {"conflicts": [], "pending_action": "update"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+         patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(False, "network error")), \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        rc = cli.cmd_apply(SimpleNamespace())
+
+    assert rc == 1
+    sent_status = mock_report.call_args[0][0]
+    assert sent_status == "error"
+
+
+def test_cmd_apply_meldet_updates_available_immer():
+    policy = {"conflicts": []}
+    patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        cli.cmd_apply(SimpleNamespace())
+
+    sent_details = mock_report.call_args[0][2]
+    assert sent_details["updates_available"] == 2
