@@ -78,7 +78,7 @@ def test_cmd_apply_ohne_pending_action_ruft_upgrade_all_nicht_auf():
 
 def test_cmd_apply_mit_pending_action_ruft_upgrade_all_auf():
     policy = {"conflicts": [], "pending_action": "update"}
-    patches = _mock_apply_run(policy)
+    patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], \
          patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(True, "upgraded 3 packages")) as mock_upgrade, \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
@@ -87,7 +87,11 @@ def test_cmd_apply_mit_pending_action_ruft_upgrade_all_auf():
     assert rc == 0
     mock_upgrade.assert_called_once_with("apt")
     sent_details = mock_report.call_args[0][2]
-    assert sent_details["update_result"] == {"ok": True, "detail": "upgraded 3 packages"}
+    assert sent_details["update_result"] == {
+        "ok": True,
+        "detail": "upgraded 3 packages",
+        "packages": ["htop", "vim"],
+    }
 
 
 def test_cmd_apply_fehlgeschlagenes_update_setzt_status_error():
@@ -135,3 +139,27 @@ def test_cmd_apply_kein_security_feld_ohne_apt_backend():
 
     sent_details = mock_report.call_args[0][2]
     assert "security_updates_available" not in sent_details
+
+
+def test_cmd_apply_meldet_paketlisten_fuer_die_vorschau():
+    policy = {"conflicts": []}
+    patches = _mock_apply_run(policy, upgradable=["htop", "libssl3"], security_upgradable=["libssl3"])
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        cli.cmd_apply(SimpleNamespace())
+
+    sent_details = mock_report.call_args[0][2]
+    assert sent_details["upgradable_packages"] == ["htop", "libssl3"]
+    assert sent_details["security_upgradable_packages"] == ["libssl3"]
+
+
+def test_cmd_apply_update_result_enthaelt_angewandte_pakete():
+    policy = {"conflicts": [], "pending_action": "update"}
+    patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], \
+         patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(True, "upgraded")), \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        cli.cmd_apply(SimpleNamespace())
+
+    sent_details = mock_report.call_args[0][2]
+    assert sent_details["update_result"]["packages"] == ["htop", "vim"]

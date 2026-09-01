@@ -111,11 +111,20 @@ def cmd_apply(args) -> int:
     # schon beruecksichtigt werden.
     update_result = None
     if policy.get("pending_action") == "update":
+        # Schnappschuss VOR dem eigentlichen Upgrade -- das sind die
+        # Pakete, die tatsaechlich aktualisiert werden sollen; nach dem
+        # Upgrade ist 'upgradable' idealerweise (fast) leer und wuerde
+        # nicht mehr zeigen, was gerade passiert ist.
+        applied_packages = list(upgradable)
         if backend:
             ok, output = pkg.upgrade_all(backend)
-            update_result = {"ok": ok, "detail": output}
+            update_result = {"ok": ok, "detail": output, "packages": applied_packages}
         else:
-            update_result = {"ok": False, "detail": "kein unterstützter Paket-Manager gefunden"}
+            update_result = {
+                "ok": False,
+                "detail": "kein unterstützter Paket-Manager gefunden",
+                "packages": [],
+            }
         upgradable = pkg.list_upgradable(backend)
         security_upgradable = pkg.list_security_upgradable(backend) if backend == "apt" else []
 
@@ -123,8 +132,10 @@ def cmd_apply(args) -> int:
     status, summary = applymod.summarize(policy, result)
 
     result["updates_available"] = len(upgradable)
+    result["upgradable_packages"] = upgradable
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
+        result["security_upgradable_packages"] = security_upgradable
     if update_result is not None:
         result["update_result"] = update_result
         if not update_result["ok"]:
