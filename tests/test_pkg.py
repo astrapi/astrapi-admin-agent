@@ -96,6 +96,32 @@ def test_list_upgradable_unbekanntes_backend_liefert_leere_liste():
     assert pkg.list_upgradable("") == []
 
 
+def test_list_security_upgradable_apt_filtert_security_suite():
+    stdout = (
+        "Listing...\n"
+        "libssl3t64/stable-security 3.5.7-1~deb13u2 amd64 [upgradable from: 3.5.6-1~deb13u2]\n"
+        "htop/stable 3.3.0 amd64 [upgradable from: 3.2.0]\n"
+    )
+    with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0, stdout=stdout)):
+        assert pkg.list_security_upgradable("apt") == ["libssl3t64"]
+
+
+def test_list_security_upgradable_apt_keine_security_updates():
+    stdout = "Listing...\nhtop/stable 3.3.0 amd64 [upgradable from: 3.2.0]\n"
+    with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0, stdout=stdout)):
+        assert pkg.list_security_upgradable("apt") == []
+
+
+def test_list_security_upgradable_pacman_immer_leer():
+    with patch("astrapi_admin_agent.pkg.subprocess.run") as mock_run:
+        assert pkg.list_security_upgradable("pacman") == []
+    mock_run.assert_not_called()
+
+
+def test_list_security_upgradable_unbekanntes_backend_leer():
+    assert pkg.list_security_upgradable("") == []
+
+
 def test_upgrade_all_pacman_kommando():
     with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0)) as mock_run:
         ok, _ = pkg.upgrade_all("pacman")

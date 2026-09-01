@@ -99,8 +99,11 @@ def cmd_apply(args) -> int:
 
     # Reiner Status-Check laeuft IMMER, unabhaengig von pending_action --
     # billig, rein lesend, liefert die Update-Anzeige unabhaengig davon,
-    # ob je ein Update angestossen wird.
+    # ob je ein Update angestossen wird. Security-Teilmenge nur fuer apt
+    # (Debian) sinnvoll (E-008) -- Arch/pacman hat dafuer keine
+    # vergleichbare Kategorisierung, siehe list_security_upgradable().
     upgradable = pkg.list_upgradable(backend)
+    security_upgradable = pkg.list_security_upgradable(backend) if backend == "apt" else []
 
     # Echtes Update NUR, wenn der Server das ueber pending_action explizit
     # angefordert hat (E-007) -- laeuft vor der normalen Policy-Konvergenz,
@@ -114,11 +117,14 @@ def cmd_apply(args) -> int:
         else:
             update_result = {"ok": False, "detail": "kein unterstützter Paket-Manager gefunden"}
         upgradable = pkg.list_upgradable(backend)
+        security_upgradable = pkg.list_security_upgradable(backend) if backend == "apt" else []
 
     result = applymod.apply_policy(policy)
     status, summary = applymod.summarize(policy, result)
 
     result["updates_available"] = len(upgradable)
+    if backend == "apt":
+        result["security_updates_available"] = len(security_upgradable)
     if update_result is not None:
         result["update_result"] = update_result
         if not update_result["ok"]:
@@ -129,6 +135,8 @@ def cmd_apply(args) -> int:
     if update_result is not None:
         print(f"  Update: {update_result}")
     print(f"  Verfügbare Updates: {len(upgradable)}")
+    if backend == "apt":
+        print(f"  davon sicherheitsrelevant: {len(security_upgradable)}")
     for item in result["packages"] + result["services"] + result["config_files"]:
         if item["status"] != "ok":
             print(f"  {item}")

@@ -50,6 +50,29 @@ def list_upgradable(backend: str) -> list[str]:
     return []
 
 
+def list_security_upgradable(backend: str) -> list[str]:
+    """Teilmenge von list_upgradable(), die aus einer *-security-Suite
+    stammt -- nur fuer apt (Debian) sinnvoll, siehe E-008. 'apt list
+    --upgradable' zeigt die Suite direkt nach dem Paketnamen (z.B.
+    'libssl3t64/stable-security', gegen ein echtes debian:trixie-slim
+    verifiziert), kein zusaetzlicher Aufruf noetig -- reine
+    Nachauswertung derselben Information. pacman/checkupdates kennt
+    keine vergleichbare Kategorisierung, deshalb dort und bei
+    unbekanntem Backend immer leer."""
+    if backend != "apt":
+        return []
+    r = subprocess.run(["apt", "list", "--upgradable"], capture_output=True, text=True)
+    result = []
+    for ln in r.stdout.splitlines():
+        if not ln.strip() or ln.startswith("Listing..."):
+            continue
+        name, _, rest = ln.partition("/")
+        suite = rest.split(" ", 1)[0]
+        if "security" in suite.lower():
+            result.append(name)
+    return result
+
+
 def upgrade_all(backend: str) -> tuple[bool, str]:
     """Echtes Update -- wird vom Aufrufer NUR ausgefuehrt, wenn der
     Server das explizit ueber pending_action angefordert hat, nie
