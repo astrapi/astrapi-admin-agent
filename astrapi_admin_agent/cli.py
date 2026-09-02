@@ -9,6 +9,7 @@ import httpx
 from astrapi_admin_agent import apply as applymod
 from astrapi_admin_agent import config as cfgmod
 from astrapi_admin_agent import pkg, timer_config
+from astrapi_admin_agent import users as usersmod
 from astrapi_admin_agent.api_client import ApiClient
 from astrapi_admin_agent.osinfo import detect_os_type
 
@@ -138,6 +139,9 @@ def cmd_apply(args) -> int:
     result["updates_available"] = len(upgradable)
     result["upgradable_packages"] = upgradable
     result["reboot_required"] = pkg.reboot_required(backend)
+    # E-012: rein informative Bestandsaufnahme -- laeuft IMMER, unabhaengig
+    # davon, ob je eine Nutzer-Policy zugewiesen wurde.
+    result["user_inventory"] = usersmod.inventory()
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable
@@ -153,7 +157,7 @@ def cmd_apply(args) -> int:
     print(f"  Verfügbare Updates: {len(upgradable)}")
     if backend == "apt":
         print(f"  davon sicherheitsrelevant: {len(security_upgradable)}")
-    for item in result["packages"] + result["services"] + result["config_files"]:
+    for item in result["packages"] + result["services"] + result["config_files"] + result["users"]:
         if item["status"] != "ok":
             print(f"  {item}")
     for conflict in policy.get("conflicts", []):

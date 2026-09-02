@@ -1,8 +1,9 @@
-"""apply.py: Orchestrierung der vier Phasen -- insbesondere dass Abwesenheit
-(Services/Config-Dateien absent) immer zuletzt und unabhaengig von der
-Praesenz-Phase laeuft, ein Fehlschlag eine Phase nicht blockiert, und
+"""apply.py: Orchestrierung der Phasen -- insbesondere dass Abwesenheit
+(Services/Config-Dateien/Nutzer absent) immer zuletzt und unabhaengig von
+der Praesenz-Phase laeuft, ein Fehlschlag eine Phase nicht blockiert, und
 summarize() die richtige Statuspriorität ableitet. Pakete werden seit E-004
-nur noch auf Anwesenheit GEPRUEFT, nie installiert/entfernt."""
+nur noch auf Anwesenheit GEPRUEFT, nie installiert/entfernt. Nutzerkonten
+(E-012) folgen demselben enforce/absent-Muster wie Config-Dateien."""
 from astrapi_admin_agent import apply as applymod
 
 
@@ -11,14 +12,19 @@ def _policy(**overrides):
         "packages_required": [],
         "services": [],
         "config_files": [],
+        "users": [],
         "conflicts": [],
     }
     base.update(overrides)
     return base
 
 
-def _patched_state(monkeypatch, managed_paths=None):
-    state = {"managed_paths": list(managed_paths or []), "policy_hash": ""}
+def _patched_state(monkeypatch, managed_paths=None, managed_users=None):
+    state = {
+        "managed_paths": list(managed_paths or []),
+        "managed_users": list(managed_users or []),
+        "policy_hash": "",
+    }
     monkeypatch.setattr(applymod.statemod, "load", lambda: state)
     saved = {}
     monkeypatch.setattr(applymod.statemod, "save", lambda s: saved.update(s))
@@ -147,6 +153,7 @@ def test_summarize_status_prioritaet_failed_schlaegt_alles():
         "packages": [{"status": "failed"}],
         "services": [{"status": "skipped_conflict"}],
         "config_files": [],
+        "users": [],
     }
     status, summary = applymod.summarize(policy, result)
     assert status == "error"
@@ -155,21 +162,80 @@ def test_summarize_status_prioritaet_failed_schlaegt_alles():
 
 def test_summarize_status_conflict_vor_drift():
     policy = _policy(conflicts=[{"type": "package", "name": "x"}])
-    result = {"packages": [{"status": "skipped_conflict"}], "services": [], "config_files": []}
+    result = {"packages": [{"status": "skipped_conflict"}], "services": [], "config_files": [], "users": []}
     status, _ = applymod.summarize(policy, result)
     assert status == "conflict"
 
 
 def test_summarize_status_drift_bei_skipped_ohne_policy_konflikt():
     policy = _policy()
-    result = {"packages": [{"status": "skipped_conflict"}], "services": [], "config_files": []}
+    result = {"packages": [{"status": "skipped_conflict"}], "services": [], "config_files": [], "users": []}
     status, _ = applymod.summarize(policy, result)
     assert status == "drift"
 
 
 def test_summarize_status_ok_ohne_aenderungen():
     policy = _policy()
-    result = {"packages": [{"status": "ok"}], "services": [], "config_files": []}
+    result = {"packages": [{"status": "ok"}], "services": [], "config_files": [], "users": []}
     status, summary = applymod.summarize(policy, result)
     assert status == "ok"
     assert summary == "keine Änderungen nötig"
+
+
+def test_apply_policy_nutzer_enforce_laeuft(monkeypatch):
+    _patched_state(monkeypatch)
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(applymod.usersmod, "enforce", lambda entry, backend: ("changed", "angelegt"))
+
+    result = applymod.apply_policy(_policy(users=[{"username": "alice", "action": "enforce"}]))
+
+    assert result["users"] == [
+        {"username": "alice", "action": "enforce", "status": "changed", "detail": "angelegt"}
+    ]
+
+
+def test_apply_policy_nutzer_wird_zu_managed_users_hinzugefuegt(monkeypatch):
+    _, saved = _patched_state(monkeypatch)
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(applymod.usersmod, "enforce", lambda entry, backend: ("changed", "angelegt"))
+
+    applymod.apply_policy(_policy(users=[{"username": "alice", "action": "enforce"}]))
+
+    assert "alice" in saved["managed_users"]
+
+
+def test_apply_policy_nutzer_absent_entfernt_aus_managed_users(monkeypatch):
+    _, saved = _patched_state(monkeypatch, managed_users=["alice"])
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(applymod.usersmod, "remove_if_managed", lambda username, managed: ("changed", "entfernt"))
+
+    applymod.apply_policy(_policy(users=[{"username": "alice", "action": "absent"}]))
+
+    assert "alice" not in saved["managed_users"]
+
+
+def test_apply_policy_nutzer_absent_laeuft_nach_enforce(monkeypatch):
+    _patched_state(monkeypatch, managed_users=["bob"])
+    call_order = []
+    monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")
+    monkeypatch.setattr(
+        applymod.usersmod,
+        "enforce",
+        lambda entry, backend: (call_order.append(f"enforce_{entry['username']}"), ("changed", "x"))[1],
+    )
+    monkeypatch.setattr(
+        applymod.usersmod,
+        "remove_if_managed",
+        lambda username, managed: (call_order.append(f"absent_{username}"), ("changed", "y"))[1],
+    )
+
+    applymod.apply_policy(
+        _policy(
+            users=[
+                {"username": "alice", "action": "enforce"},
+                {"username": "bob", "action": "absent"},
+            ]
+        )
+    )
+
+    assert call_order == ["enforce_alice", "absent_bob"]

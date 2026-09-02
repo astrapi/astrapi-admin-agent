@@ -2,14 +2,15 @@
 """Lokaler Zustands-Cache unter /var/lib/astrapi-admin/state.json:
 managed_paths (Grundlage fuer die Loeschsicherheitsregel in
 files.remove_if_managed -- nur was astrapi-admin selbst angelegt hat,
-darf bei action=absent wieder verschwinden) und policy_hash fuers
-spaetere No-Op-Kurzschluss (Policy unveraendert + letzter Lauf ohne
-Fehler -> nur ein leichter "unveraendert"-Report)."""
+darf bei action=absent wieder verschwinden), managed_users (dieselbe
+Regel fuer users.remove_if_managed()) und policy_hash fuers spaetere
+No-Op-Kurzschluss (Policy unveraendert + letzter Lauf ohne Fehler ->
+nur ein leichter "unveraendert"-Report)."""
 import json
 import os
 from pathlib import Path
 
-DEFAULTS = {"policy_hash": "", "managed_paths": []}
+DEFAULTS = {"policy_hash": "", "managed_paths": [], "managed_users": []}
 
 _STATE_DIR = Path("/var/lib/astrapi-admin")
 
