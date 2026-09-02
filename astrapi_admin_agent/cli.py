@@ -8,7 +8,7 @@ import httpx
 
 from astrapi_admin_agent import apply as applymod
 from astrapi_admin_agent import config as cfgmod
-from astrapi_admin_agent import pkg
+from astrapi_admin_agent import pkg, timer_config
 from astrapi_admin_agent.api_client import ApiClient
 from astrapi_admin_agent.osinfo import detect_os_type
 
@@ -94,6 +94,10 @@ def cmd_apply(args) -> int:
     except Exception as exc:
         print(f"Policy-Abruf fehlgeschlagen: {_format_error(exc)}", file=sys.stderr)
         return 1
+
+    # E-011: server-seitig einstellbares Poll-Intervall -- unabhaengig von
+    # der eigentlichen Policy-Konvergenz, deshalb hier vorgezogen.
+    timer_config.apply_poll_interval(policy.get("poll_interval_minutes") or 15)
 
     backend = pkg.detect_backend()
 
