@@ -138,10 +138,22 @@ def cmd_apply(args) -> int:
 
     result["updates_available"] = len(upgradable)
     result["upgradable_packages"] = upgradable
-    result["reboot_required"] = pkg.reboot_required(backend)
+    # reboot_required()/inventory() sind reine Anreicherung des Reports --
+    # anders als die eigentliche Policy-Konvergenz duerfen sie den ganzen
+    # apply()-Zyklus nie zum Absturz bringen (sonst kaeme ueberhaupt kein
+    # Report beim Server an, schlimmer als ein normaler Fehlerstatus).
+    try:
+        result["reboot_required"] = pkg.reboot_required(backend)
+    except Exception as e:
+        print(f"Warnung: Neustart-Status konnte nicht ermittelt werden: {e}", file=sys.stderr)
+        result["reboot_required"] = False
     # E-012: rein informative Bestandsaufnahme -- laeuft IMMER, unabhaengig
     # davon, ob je eine Nutzer-Policy zugewiesen wurde.
-    result["user_inventory"] = usersmod.inventory()
+    try:
+        result["user_inventory"] = usersmod.inventory()
+    except Exception as e:
+        print(f"Warnung: Nutzer-Bestandsaufnahme fehlgeschlagen: {e}", file=sys.stderr)
+        result["user_inventory"] = []
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable
