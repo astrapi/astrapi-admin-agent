@@ -137,6 +137,7 @@ def cmd_apply(args) -> int:
 
     result["updates_available"] = len(upgradable)
     result["upgradable_packages"] = upgradable
+    result["reboot_required"] = pkg.reboot_required(backend)
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable

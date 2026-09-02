@@ -3,6 +3,7 @@
 verfuegbare Binaries erkannt (robuster als os-release bei Derivaten)."""
 import shutil
 import subprocess
+from pathlib import Path
 
 
 def detect_backend() -> str:
@@ -88,3 +89,29 @@ def upgrade_all(backend: str) -> tuple[bool, str]:
         raise ValueError(f"Unbekanntes Paket-Backend: {backend}")
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.returncode == 0, (r.stdout + r.stderr)
+
+
+def reboot_required(backend: str) -> bool:
+    """Rein lesend, prueft den JETZT aktuellen Zustand (nach einem
+    eventuellen upgrade_all()-Aufruf sinnvoll aufgerufen).
+
+    apt (Debian): 'apt-get upgrade'/unattended-upgrades hinterlegen bei
+    einem Kernel-/Bibliotheks-Update, das einen Neustart braucht, den
+    Standard-Debian-Marker /var/run/reboot-required -- kein eigenes
+    Parsing noetig.
+
+    pacman (Arch): kennt keine vergleichbare Markierung. Ersatz-Heuristik:
+    existiert das Modul-Verzeichnis des GERADE LAUFENDEN Kernels
+    (uname -r) noch unter /usr/lib/modules/? pacman entfernt/ersetzt
+    dieses Verzeichnis, sobald ein neueres 'linux'-Paket installiert wird
+    -- fehlt es, laeuft noch der alte Kernel, obwohl bereits ein neuerer
+    installiert ist."""
+    if backend == "apt":
+        return Path("/var/run/reboot-required").exists()
+    if backend == "pacman":
+        r = subprocess.run(["uname", "-r"], capture_output=True, text=True)
+        running = r.stdout.strip()
+        if not running:
+            return False
+        return not Path(f"/usr/lib/modules/{running}").exists()
+    return False

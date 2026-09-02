@@ -145,3 +145,40 @@ def test_upgrade_all_meldet_fehlschlag():
 def test_upgrade_all_unbekanntes_backend_wirft_value_error():
     with pytest.raises(ValueError):
         pkg.upgrade_all("yum")
+
+
+def test_reboot_required_apt_prueft_reboot_required_datei():
+    with patch("astrapi_admin_agent.pkg.Path") as mock_path:
+        mock_path.return_value.exists.return_value = True
+        assert pkg.reboot_required("apt") is True
+    mock_path.assert_called_once_with("/var/run/reboot-required")
+
+
+def test_reboot_required_apt_ohne_datei_ist_false():
+    with patch("astrapi_admin_agent.pkg.Path") as mock_path:
+        mock_path.return_value.exists.return_value = False
+        assert pkg.reboot_required("apt") is False
+
+
+def test_reboot_required_pacman_modulverzeichnis_fehlt():
+    with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0, stdout="6.10.5-arch1-1\n")), \
+         patch("astrapi_admin_agent.pkg.Path") as mock_path:
+        mock_path.return_value.exists.return_value = False
+        assert pkg.reboot_required("pacman") is True
+    mock_path.assert_called_once_with("/usr/lib/modules/6.10.5-arch1-1")
+
+
+def test_reboot_required_pacman_modulverzeichnis_vorhanden():
+    with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0, stdout="6.10.5-arch1-1\n")), \
+         patch("astrapi_admin_agent.pkg.Path") as mock_path:
+        mock_path.return_value.exists.return_value = True
+        assert pkg.reboot_required("pacman") is False
+
+
+def test_reboot_required_pacman_ohne_uname_ausgabe_ist_false():
+    with patch("astrapi_admin_agent.pkg.subprocess.run", return_value=_fake_run(0, stdout="")):
+        assert pkg.reboot_required("pacman") is False
+
+
+def test_reboot_required_unbekanntes_backend_ist_false():
+    assert pkg.reboot_required("yum") is False
