@@ -195,7 +195,12 @@ def test_remove_if_managed_meldet_failed_bei_userdel_fehler():
 # ── inventory() ──────────────────────────────────────────────────────────
 
 
-def test_inventory_filtert_system_accounts_unter_uid_min(tmp_path):
+def test_inventory_filtert_keine_system_accounts(tmp_path):
+    """Kein UID-Filter (mehr): 'caddy'/'claude'-artige Service-Accounts
+    mit niedriger, dynamisch allozierter UID sollen genauso sichtbar
+    sein wie normale Accounts -- es gibt keine saubere numerische
+    Trennlinie zwischen "interessant" (z.B. ein per Paket angelegter
+    Service-Account) und "uninteressant" (sshd, messagebus)."""
     home = tmp_path / "alice"
     home.mkdir()
     entries = [_FakePw("root", uid=0, home=str(tmp_path)), _FakePw("alice", uid=1500, home=str(home))]
@@ -204,7 +209,7 @@ def test_inventory_filtert_system_accounts_unter_uid_min(tmp_path):
          patch("astrapi_admin_agent.users.state.load", return_value={"managed_users": []}):
         result = users.inventory()
 
-    assert [u["username"] for u in result] == ["alice"]
+    assert [u["username"] for u in result] == ["root", "alice"]
 
 
 def test_inventory_erkennt_sudo_mitgliedschaft(tmp_path):

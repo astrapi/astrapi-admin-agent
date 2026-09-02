@@ -20,8 +20,6 @@ from pathlib import Path
 
 from astrapi_admin_agent import files, state
 
-UID_MIN = 1000  # System-/Dienstkonten (uid < 1000) werden nie erfasst
-
 
 def _sudo_group(backend: str) -> str:
     return "sudo" if backend == "apt" else "wheel"
@@ -55,12 +53,19 @@ def inventory() -> list[dict]:
     """Rein lesend, wird IMMER aufgerufen (wie pkg.list_upgradable()) --
     unabhaengig davon, ob je eine Nutzer-Policy existiert. Meldet NIE
     SSH-Key-INHALTE, nur ob welche hinterlegt sind -- fuer die reine
-    Bestandsaufnahme nicht relevant, haelt den Report klein."""
+    Bestandsaufnahme nicht relevant, haelt den Report klein.
+
+    KEIN UID-Filter: ein Schwellwert wie "UID >= 1000" schliesst genau
+    die Service-Accounts aus, die man am ehesten sehen will (z.B. ein
+    per Paket angelegter 'caddy'-Account mit fester System-UID) --
+    Debian/Arch vergeben dynamisch allozierte System-Accounts (sshd,
+    messagebus, systemd-network, ABER AUCH caddy o.ae.) aus demselben
+    UID-Bereich, es gibt keine saubere numerische Trennlinie zwischen
+    "interessant" und "uninteressant". Deshalb wird JEDES Konto aus
+    /etc/passwd gemeldet, die Einordnung bleibt beim Menschen."""
     managed = set(state.load().get("managed_users", []))
     out = []
     for entry in pwd.getpwall():
-        if entry.pw_uid < UID_MIN:
-            continue
         groups = _group_names(entry.pw_name)
         out.append(
             {
