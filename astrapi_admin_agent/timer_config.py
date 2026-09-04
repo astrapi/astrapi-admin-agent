@@ -32,6 +32,24 @@ def _dropin_content(minutes: int) -> str:
     )
 
 
+def enable_now() -> None:
+    """Aktiviert den Timer dauerhaft (ueberlebt einen Reboot) -- ohne das
+    bliebe ein frisch gepaarter Host nur bis zum naechsten Neustart aktiv:
+    weder das Debian-/Arch-Paket (kein Postinst-Mechanismus im
+    astrapi-packages-Build, nur ein blosses `install` der Unit-Dateien)
+    noch dieser Agent an anderer Stelle rufen 'systemctl enable' auf.
+    Ohne diesen Schritt haette ein Host nach einem Reboot (z.B. nach einem
+    selbst ausgeloesten Kernel-Update) den periodischen Poll-Zyklus
+    dauerhaft verloren, bis jemand von Hand nachhilft (T-303-ADMIN)."""
+    subprocess.run(
+        ["systemctl", "enable", "--now", "astrapi-admin-agent.timer"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
 def apply_poll_interval(minutes: int) -> None:
     """Best-effort -- darf cmd_apply() nie zum Absturz bringen (analog zur
     Proxmox-LXC-Erkennung beim Pairing, die denselben "nie den Hauptablauf

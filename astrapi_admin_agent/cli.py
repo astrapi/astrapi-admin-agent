@@ -76,6 +76,17 @@ def cmd_pair(args) -> int:
 
     print(f"Gekoppelt als Host {result['host_id']} ({hostname}, {os_type or 'OS unbekannt'}).")
     print(f"Konfiguration gespeichert unter {cfgmod.config_path()}")
+
+    try:
+        timer_config.enable_now()
+        print("Periodischer Timer aktiviert (astrapi-admin-agent.timer).")
+    except Exception as e:
+        print(
+            f"Warnung: Timer konnte nicht aktiviert werden ({e}) -- bitte manuell "
+            "'systemctl enable --now astrapi-admin-agent.timer' ausführen, sonst "
+            "läuft der Agent nur bis zum nächsten Neustart.",
+            file=sys.stderr,
+        )
     return 0
 
 

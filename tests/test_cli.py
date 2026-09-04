@@ -30,11 +30,44 @@ def test_cmd_pair_laeuft_als_root_weiter():
          patch("astrapi_admin_agent.cli.ApiClient.pair", return_value={"host_id": "1", "host_token": "tok"}), \
          patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
          patch("astrapi_admin_agent.cli.cfgmod.save") as mock_save, \
-         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"):
+         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable:
         rc = cli.cmd_pair(_pair_args())
 
     assert rc == 0
     mock_save.assert_called_once()
+    mock_enable.assert_called_once()
+
+
+def test_cmd_pair_aktiviert_den_timer_dauerhaft():
+    """T-303-ADMIN: ohne 'systemctl enable' (nur 'start') ueberlebt der
+    Timer keinen Reboot -- weder Paket noch Agent riefen das bisher an
+    irgendeiner Stelle auf."""
+    with patch("astrapi_admin_agent.cli.os.geteuid", return_value=0), \
+         patch("astrapi_admin_agent.cli.ApiClient.pair", return_value={"host_id": "1", "host_token": "tok"}), \
+         patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
+         patch("astrapi_admin_agent.cli.cfgmod.save"), \
+         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable:
+        cli.cmd_pair(_pair_args())
+
+    mock_enable.assert_called_once_with()
+
+
+def test_cmd_pair_fehlschlag_beim_timer_aktivieren_bricht_pairing_nicht_ab():
+    """Pairing selbst (Konfiguration ist gespeichert, Host ist beim Server
+    bekannt) darf nicht an einem fehlgeschlagenen Timer-Enable scheitern --
+    der Nutzer bekommt stattdessen eine Warnung und kann manuell
+    nachholen."""
+    with patch("astrapi_admin_agent.cli.os.geteuid", return_value=0), \
+         patch("astrapi_admin_agent.cli.ApiClient.pair", return_value={"host_id": "1", "host_token": "tok"}), \
+         patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
+         patch("astrapi_admin_agent.cli.cfgmod.save"), \
+         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_now", side_effect=OSError("boom")):
+        rc = cli.cmd_pair(_pair_args())
+
+    assert rc == 0
 
 
 def test_cmd_apply_bricht_ohne_root_ab_vor_dem_config_laden():

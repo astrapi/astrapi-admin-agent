@@ -74,3 +74,35 @@ def test_apply_poll_interval_fehler_bei_subprocess_bricht_nicht_ab(monkeypatch, 
 
     with patch("astrapi_admin_agent.timer_config.subprocess.run", side_effect=OSError("boom")):
         timer_config.apply_poll_interval(30)  # darf keine Exception werfen
+
+
+def test_enable_now_ruft_systemctl_enable_now_auf():
+    with patch("astrapi_admin_agent.timer_config.subprocess.run") as mock_run:
+        timer_config.enable_now()
+
+    mock_run.assert_called_once_with(
+        ["systemctl", "enable", "--now", "astrapi-admin-agent.timer"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def test_enable_now_wirft_bei_fehler_weiter():
+    """Anders als apply_poll_interval() ist enable_now() NICHT best-effort
+    -- der Aufrufer (cmd_pair) entscheidet selbst, wie er einen Fehler
+    meldet (Warnung statt stillem Schlucken, siehe cli.py)."""
+    import subprocess
+
+    with patch(
+        "astrapi_admin_agent.timer_config.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "systemctl"),
+    ):
+        try:
+            timer_config.enable_now()
+            raised = False
+        except subprocess.CalledProcessError:
+            raised = True
+
+    assert raised
