@@ -1,7 +1,7 @@
 """timer_config.py -- E-011: der Agent gleicht bei jedem Poll seinen
 eigenen systemd-Timer gegen den vom Server gewuenschten Wert ab (kein
 Push, der Server kann dem Agenten nichts direkt aufzwingen)."""
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from astrapi_admin_agent import timer_config
 
@@ -106,3 +106,43 @@ def test_enable_now_wirft_bei_fehler_weiter():
             raised = True
 
     assert raised
+
+
+def _mock_list_timers_run(stdout: str):
+    result = MagicMock()
+    result.stdout = stdout
+    return result
+
+
+def test_next_run_at_liefert_lesbaren_zeitstempel():
+    stdout = '[{"next":1788550946500031,"left":1788550946500031,"last":1788550570373266,"passed":618354382073,"unit":"astrapi-admin-agent.timer","activates":"astrapi-admin-agent.service"}]'
+    with patch("astrapi_admin_agent.timer_config.subprocess.run", return_value=_mock_list_timers_run(stdout)):
+        result = timer_config.next_run_at()
+
+    from datetime import datetime
+
+    assert result == datetime.fromtimestamp(1788550946500031 / 1_000_000).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_next_run_at_liefert_none_ohne_geplanten_lauf():
+    """T-303-ADMIN-Fall: ein nicht enabled/nie ausgeloester Timer hat
+    kein 'next' -- lieber None als ein irrefuehrender geschaetzter
+    Zeitpunkt."""
+    stdout = '[{"next":0,"left":0,"last":0,"passed":0,"unit":"astrapi-admin-agent.timer","activates":"astrapi-admin-agent.service"}]'
+    with patch("astrapi_admin_agent.timer_config.subprocess.run", return_value=_mock_list_timers_run(stdout)):
+        assert timer_config.next_run_at() is None
+
+
+def test_next_run_at_leere_liste_liefert_none():
+    with patch("astrapi_admin_agent.timer_config.subprocess.run", return_value=_mock_list_timers_run("[]")):
+        assert timer_config.next_run_at() is None
+
+
+def test_next_run_at_fehler_bei_subprocess_liefert_none():
+    with patch("astrapi_admin_agent.timer_config.subprocess.run", side_effect=OSError("boom")):
+        assert timer_config.next_run_at() is None
+
+
+def test_next_run_at_kaputtes_json_liefert_none():
+    with patch("astrapi_admin_agent.timer_config.subprocess.run", return_value=_mock_list_timers_run("nicht json")):
+        assert timer_config.next_run_at() is None

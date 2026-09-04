@@ -102,12 +102,13 @@ def _mock_apply_run(policy: dict, upgradable: list[str] | None = None, security_
         ),
         patch("astrapi_admin_agent.cli.timer_config.apply_poll_interval"),
         patch("astrapi_admin_agent.cli.usersmod.inventory", return_value=[]),
+        patch("astrapi_admin_agent.cli.timer_config.next_run_at", return_value="2026-09-04 22:00:00"),
     )
 
 
 def test_cmd_apply_ohne_pending_action_ruft_upgrade_all_nicht_auf():
     patches = _mock_apply_run({"conflicts": []})
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.pkg.upgrade_all") as mock_upgrade:
         rc = cli.cmd_apply(SimpleNamespace())
 
@@ -118,7 +119,7 @@ def test_cmd_apply_ohne_pending_action_ruft_upgrade_all_nicht_auf():
 def test_cmd_apply_mit_pending_action_ruft_upgrade_all_auf():
     policy = {"conflicts": [], "pending_action": "update"}
     patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(True, "upgraded 3 packages")) as mock_upgrade, \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         rc = cli.cmd_apply(SimpleNamespace())
@@ -136,7 +137,7 @@ def test_cmd_apply_mit_pending_action_ruft_upgrade_all_auf():
 def test_cmd_apply_fehlgeschlagenes_update_setzt_status_error():
     policy = {"conflicts": [], "pending_action": "update"}
     patches = _mock_apply_run(policy)
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(False, "network error")), \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         rc = cli.cmd_apply(SimpleNamespace())
@@ -149,7 +150,7 @@ def test_cmd_apply_fehlgeschlagenes_update_setzt_status_error():
 def test_cmd_apply_meldet_updates_available_immer():
     policy = {"conflicts": []}
     patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         cli.cmd_apply(SimpleNamespace())
 
@@ -160,7 +161,7 @@ def test_cmd_apply_meldet_updates_available_immer():
 def test_cmd_apply_meldet_security_updates_available_bei_apt():
     policy = {"conflicts": []}
     patches = _mock_apply_run(policy, upgradable=["htop", "libssl3"], security_upgradable=["libssl3"])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         cli.cmd_apply(SimpleNamespace())
 
@@ -171,7 +172,7 @@ def test_cmd_apply_meldet_security_updates_available_bei_apt():
 def test_cmd_apply_kein_security_feld_ohne_apt_backend():
     policy = {"conflicts": []}
     patches = _mock_apply_run(policy, upgradable=["htop"])
-    with patches[0], patches[1], patches[2], patches[3], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.pkg.detect_backend", return_value="pacman"), \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         cli.cmd_apply(SimpleNamespace())
@@ -183,7 +184,7 @@ def test_cmd_apply_kein_security_feld_ohne_apt_backend():
 def test_cmd_apply_meldet_paketlisten_fuer_die_vorschau():
     policy = {"conflicts": []}
     patches = _mock_apply_run(policy, upgradable=["htop", "libssl3"], security_upgradable=["libssl3"])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         cli.cmd_apply(SimpleNamespace())
 
@@ -195,7 +196,7 @@ def test_cmd_apply_meldet_paketlisten_fuer_die_vorschau():
 def test_cmd_apply_update_result_enthaelt_angewandte_pakete():
     policy = {"conflicts": [], "pending_action": "update"}
     patches = _mock_apply_run(policy, upgradable=["htop", "vim"])
-    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], \
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
          patch("astrapi_admin_agent.cli.pkg.upgrade_all", return_value=(True, "upgraded")), \
          patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
         cli.cmd_apply(SimpleNamespace())

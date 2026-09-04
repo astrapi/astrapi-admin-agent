@@ -9,8 +9,10 @@ Drop-in-Override ab. Wirkt deshalb erst beim naechsten Poll-Zyklus,
 nicht sofort -- der zuletzt konfigurierte Intervall gilt bis dahin
 weiter.
 """
+import json
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 DROPIN_DIR = Path("/etc/systemd/system/astrapi-admin-agent.timer.d")
@@ -48,6 +50,33 @@ def enable_now() -> None:
         text=True,
         timeout=10,
     )
+
+
+def next_run_at() -> str | None:
+    """Liest den naechsten geplanten Timer-Lauf direkt von systemd
+    (list-timers --output=json, 'next' = Mikrosekunden seit Epoch,
+    bereits inkl. RandomizedDelaySec-Jitter) -- zuverlaessiger als eine
+    server-seitige last_seen+Intervall-Schaetzung, die weder Jitter noch
+    einen inaktiven/nicht enabled Timer beruecksichtigen wuerde
+    (T-303-ADMIN: ein solcher Host liefert hier einfach None statt eines
+    irrefuehrenden geschaetzten Zeitpunkts). Best-effort, wie
+    reboot_required()/inventory() in cli.py -- darf den Report-Zyklus
+    nie zum Absturz bringen."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "list-timers", "astrapi-admin-agent.timer", "--all", "--output=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        data = json.loads(r.stdout)
+        next_usec = data[0].get("next") if data else None
+        if not next_usec:
+            return None
+        return datetime.fromtimestamp(next_usec / 1_000_000).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
 
 
 def apply_poll_interval(minutes: int) -> None:
