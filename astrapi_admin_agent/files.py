@@ -20,6 +20,7 @@ import os
 import pwd
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -52,6 +53,26 @@ def atomic_write(path: Path, content: str, mode: int, owner: str, group: str) ->
     shutil.chown(path, user=owner, group=group)
 
 
+def _is_sudoers_path(path: Path) -> bool:
+    return str(path).startswith("/etc/sudoers.d/")
+
+
+def _validate_sudoers(content: str) -> tuple[bool, str]:
+    """visudo -cf prueft Syntax gegen eine Kopie, ohne sie zu uebernehmen --
+    eine kaputte Datei unter /etc/sudoers.d/ kann sudo fuer den GESAMTEN
+    Host lahmlegen (derselbe Grund, aus dem claude-temp-access das schon
+    frueher brauchte, siehe astrapi-hub-Vault, Entscheidung E-013). Der
+    generische config_files-Mechanismus hatte diesen Schutz bisher nicht."""
+    fd, tmp_path = tempfile.mkstemp(suffix=".sudoers-check")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(content)
+        r = subprocess.run(["visudo", "-cf", tmp_path], capture_output=True, text=True)
+        return r.returncode == 0, (r.stdout + r.stderr).strip()
+    finally:
+        os.unlink(tmp_path)
+
+
 def enforce(cf: dict) -> tuple[str, str]:
     """Gibt (status, detail) zurueck. status in
     {'ok', 'changed', 'skipped_conflict', 'failed'}."""
@@ -76,6 +97,11 @@ def enforce(cf: dict) -> tuple[str, str]:
             return "failed", str(e)
         if unchanged:
             return "ok", "unverändert"
+
+    if _is_sudoers_path(path):
+        valid, detail = _validate_sudoers(content)
+        if not valid:
+            return "failed", f"sudoers-Syntaxfehler, nicht geschrieben: {detail}"
 
     try:
         atomic_write(path, content, mode, owner, group)

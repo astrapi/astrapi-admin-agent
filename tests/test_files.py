@@ -79,6 +79,43 @@ def test_enforce_meldet_failed_bei_schreibfehler(tmp_path):
     assert "voll" in detail
 
 
+def test_enforce_lehnt_syntaktisch_ungueltige_sudoers_datei_ab():
+    """E-013 (astrapi-hub-Vault): eine kaputte Datei unter
+    /etc/sudoers.d/ kann sudo fuer den GESAMTEN Host lahmlegen -- der
+    generische config_files-Mechanismus muss das genauso verhindern wie
+    claude-temp-access es fuer seinen eigenen Anwendungsfall schon tut."""
+    cf = {
+        "path": "/etc/sudoers.d/claude-deploy",
+        "content": "das ist keine gueltige sudoers-Syntax @@@\n",
+        "mode": "0440",
+        "owner": "root",
+        "group": "root",
+    }
+    with patch("astrapi_admin_agent.files.is_package_owned", return_value=False), \
+         patch("astrapi_admin_agent.files.atomic_write") as mock_write:
+        status, detail = files.enforce(cf)
+
+    assert status == "failed"
+    assert "sudoers" in detail
+    mock_write.assert_not_called()
+
+
+def test_enforce_schreibt_syntaktisch_gueltige_sudoers_datei():
+    cf = {
+        "path": "/etc/sudoers.d/claude-deploy",
+        "content": "claude ALL=(root) NOPASSWD: /usr/bin/systemctl restart astrapi-*\n",
+        "mode": "0440",
+        "owner": "root",
+        "group": "root",
+    }
+    with patch("astrapi_admin_agent.files.is_package_owned", return_value=False), \
+         patch("astrapi_admin_agent.files.atomic_write") as mock_write:
+        status, detail = files.enforce(cf)
+
+    assert status == "changed"
+    mock_write.assert_called_once()
+
+
 def test_remove_if_managed_loescht_fremde_datei_nicht(tmp_path):
     path = tmp_path / "fremd.conf"
     path.write_text("fremd\n")
