@@ -25,14 +25,19 @@ def test_apply_poll_interval_legt_dropin_beim_ersten_aufruf_an(monkeypatch, tmp_
     assert mock_run.call_count == 2
 
 
-def test_apply_poll_interval_reset_zeile_kommt_vor_dem_eigentlichen_wert(monkeypatch, tmp_path):
+def test_apply_poll_interval_ohne_reset_zeile(monkeypatch, tmp_path):
+    """T-320-ADMIN: die fruehere leere OnUnitActiveSec=-Reset-Zeile vor der
+    eigentlichen Zuweisung brachte systemd 257 (Debian trixie) dazu, fuer
+    diesen Timer nie wieder einen naechsten Termin zu berechnen -- live auf
+    `backup-dev` reproduziert. OnUnitActiveSec steht deshalb nicht mehr in
+    der Basis-.timer, der Reset ist ueberfluessig geworden."""
     dropin_path = _redirect_dropin(monkeypatch, tmp_path)
 
     with patch("astrapi_admin_agent.timer_config.subprocess.run"):
         timer_config.apply_poll_interval(60)
 
     lines = [ln for ln in dropin_path.read_text().splitlines() if ln.startswith("OnUnitActiveSec=")]
-    assert lines == ["OnUnitActiveSec=", "OnUnitActiveSec=60min"]
+    assert lines == ["OnUnitActiveSec=60min"]
 
 
 def test_apply_poll_interval_ruft_daemon_reload_und_timer_restart_auf(monkeypatch, tmp_path):

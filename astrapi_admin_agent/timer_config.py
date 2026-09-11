@@ -19,16 +19,24 @@ DROPIN_PATH = DROPIN_DIR / "override.conf"
 
 
 def _dropin_content(minutes: int) -> str:
-    # Die erste, leere OnUnitActiveSec=-Zeile setzt den von der Basis-.timer
-    # geerbten 15min-Wert zurueck -- Drop-ins sind fuer wiederholbare
-    # Direktiven wie OnUnitActiveSec additiv, ohne den Reset wuerden beide
-    # Intervalle gleichzeitig gelten (der Timer liefe dann am kuerzeren).
+    # T-320-ADMIN: FRUEHER stand hier zusaetzlich eine leere
+    # "OnUnitActiveSec=\n"-Zeile vor dieser Zuweisung, um den von der
+    # Basis-.timer geerbten 15min-Wert zurueckzusetzen (Drop-ins sind fuer
+    # wiederholbare Direktiven wie OnUnitActiveSec additiv). Live auf
+    # `backup-dev` reproduziert: genau dieser Reset-dann-Neuzuweisen-Trick
+    # bringt systemd 257 (Debian trixie) dazu, fuer den Timer nie wieder
+    # einen "next" Termin zu berechnen ("active (elapsed)"/"Trigger: n/a",
+    # dauerhaft, kein automatischer Lauf mehr). Ohne Drop-in oder mit einer
+    # einfachen Zuweisung ohne Reset funktioniert derselbe Timer sofort
+    # wieder normal. Deshalb jetzt: kein Reset mehr noetig, weil
+    # OnUnitActiveSec inzwischen NICHT MEHR in der Basis-.timer steht
+    # (nur dort per Drop-in gesetzt) -- Bootstrap vor dem ersten Poll laeuft
+    # stattdessen ueber OnBootSec/OnActiveSec in der Basis-.timer.
     return (
         "# Verwaltet von astrapi-admin-agent -- Wert kommt vom Server\n"
         "# (astrapi-admin: Einstellungen > Agent). Nicht von Hand bearbeiten,\n"
         "# wird beim naechsten Poll ueberschrieben.\n"
         "[Timer]\n"
-        "OnUnitActiveSec=\n"
         f"OnUnitActiveSec={minutes}min\n"
     )
 
