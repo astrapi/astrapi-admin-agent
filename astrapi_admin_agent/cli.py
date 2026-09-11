@@ -165,9 +165,7 @@ def cmd_apply(args) -> int:
     except Exception as e:
         print(f"Warnung: Nutzer-Bestandsaufnahme fehlgeschlagen: {e}", file=sys.stderr)
         result["user_inventory"] = []
-    # next_run_at() ist bereits intern best-effort (siehe timer_config.py),
-    # kein zusaetzliches try/except noetig -- liefert None statt zu werfen.
-    result["next_run_at"] = timer_config.next_run_at()
+    result["next_run_at"] = timer_config.next_run_at(policy.get("poll_interval_minutes") or 15)
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable
