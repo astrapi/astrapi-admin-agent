@@ -203,3 +203,24 @@ def test_cmd_apply_update_result_enthaelt_angewandte_pakete():
 
     sent_details = mock_report.call_args[0][2]
     assert sent_details["update_result"]["packages"] == ["htop", "vim"]
+
+
+def test_cmd_apply_ruft_tz_ensure_nicht_auf_ohne_timezone_in_policy():
+    """T-321-ADMIN: kein Feld in der Policy -- Zeitzone bleibt unangetastet."""
+    policy = {"conflicts": []}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
+         patch("astrapi_admin_agent.cli.tz.ensure") as mock_ensure:
+        cli.cmd_apply(SimpleNamespace())
+
+    mock_ensure.assert_not_called()
+
+
+def test_cmd_apply_ruft_tz_ensure_mit_policy_wert_auf():
+    policy = {"conflicts": [], "timezone": "Europe/Berlin"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
+         patch("astrapi_admin_agent.cli.tz.ensure", return_value=(True, "UTC -> Europe/Berlin")) as mock_ensure:
+        cli.cmd_apply(SimpleNamespace())
+
+    mock_ensure.assert_called_once_with("Europe/Berlin")

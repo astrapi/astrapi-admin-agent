@@ -8,7 +8,7 @@ import httpx
 
 from astrapi_admin_agent import apply as applymod
 from astrapi_admin_agent import config as cfgmod
-from astrapi_admin_agent import pkg, timer_config
+from astrapi_admin_agent import pkg, timer_config, tz
 from astrapi_admin_agent import users as usersmod
 from astrapi_admin_agent.api_client import ApiClient
 from astrapi_admin_agent.osinfo import detect_os_type
@@ -166,6 +166,15 @@ def cmd_apply(args) -> int:
         print(f"Warnung: Nutzer-Bestandsaufnahme fehlgeschlagen: {e}", file=sys.stderr)
         result["user_inventory"] = []
     result["next_run_at"] = timer_config.next_run_at(policy.get("poll_interval_minutes") or 15)
+    # T-321-ADMIN: globale Zeitzone (analog E-011) -- Feld fehlt in der
+    # Policy, solange server-seitig nichts konfiguriert ist, dann bleibt
+    # die Zeitzone unangetastet. tz.ensure() ist bereits intern
+    # best-effort (siehe tz.py), kein zusaetzliches try/except noetig.
+    desired_tz = policy.get("timezone")
+    if desired_tz:
+        tz_changed, tz_detail = tz.ensure(desired_tz)
+        if tz_changed:
+            print(f"  Zeitzone: {tz_detail}")
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable
