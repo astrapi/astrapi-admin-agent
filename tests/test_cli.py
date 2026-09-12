@@ -31,7 +31,8 @@ def test_cmd_pair_laeuft_als_root_weiter():
          patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
          patch("astrapi_admin_agent.cli.cfgmod.save") as mock_save, \
          patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
-         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable:
+         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable, \
+         patch("astrapi_admin_agent.cli.timer_config.enable_trigger_socket"):
         rc = cli.cmd_pair(_pair_args())
 
     assert rc == 0
@@ -48,7 +49,8 @@ def test_cmd_pair_aktiviert_den_timer_dauerhaft():
          patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
          patch("astrapi_admin_agent.cli.cfgmod.save"), \
          patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
-         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable:
+         patch("astrapi_admin_agent.cli.timer_config.enable_now") as mock_enable, \
+         patch("astrapi_admin_agent.cli.timer_config.enable_trigger_socket"):
         cli.cmd_pair(_pair_args())
 
     mock_enable.assert_called_once_with()
@@ -64,7 +66,36 @@ def test_cmd_pair_fehlschlag_beim_timer_aktivieren_bricht_pairing_nicht_ab():
          patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
          patch("astrapi_admin_agent.cli.cfgmod.save"), \
          patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
-         patch("astrapi_admin_agent.cli.timer_config.enable_now", side_effect=OSError("boom")):
+         patch("astrapi_admin_agent.cli.timer_config.enable_now", side_effect=OSError("boom")), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_trigger_socket"):
+        rc = cli.cmd_pair(_pair_args())
+
+    assert rc == 0
+
+
+def test_cmd_pair_aktiviert_den_trigger_socket():
+    """T-322-ADMIN: 'Jetzt pollen' aus astrapi-admin braucht den Listener
+    sofort ab dem Pairing, analog zu enable_now() fuer den Timer."""
+    with patch("astrapi_admin_agent.cli.os.geteuid", return_value=0), \
+         patch("astrapi_admin_agent.cli.ApiClient.pair", return_value={"host_id": "1", "host_token": "tok"}), \
+         patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
+         patch("astrapi_admin_agent.cli.cfgmod.save"), \
+         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_now"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_trigger_socket") as mock_enable:
+        cli.cmd_pair(_pair_args())
+
+    mock_enable.assert_called_once_with()
+
+
+def test_cmd_pair_fehlschlag_beim_trigger_socket_bricht_pairing_nicht_ab():
+    with patch("astrapi_admin_agent.cli.os.geteuid", return_value=0), \
+         patch("astrapi_admin_agent.cli.ApiClient.pair", return_value={"host_id": "1", "host_token": "tok"}), \
+         patch("astrapi_admin_agent.cli.cfgmod.load", return_value={}), \
+         patch("astrapi_admin_agent.cli.cfgmod.save"), \
+         patch("astrapi_admin_agent.cli.cfgmod.config_path", return_value="/etc/astrapi-admin/config.json"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_now"), \
+         patch("astrapi_admin_agent.cli.timer_config.enable_trigger_socket", side_effect=OSError("boom")):
         rc = cli.cmd_pair(_pair_args())
 
     assert rc == 0

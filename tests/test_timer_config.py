@@ -113,6 +113,35 @@ def test_enable_now_wirft_bei_fehler_weiter():
     assert raised
 
 
+def test_enable_trigger_socket_ruft_systemctl_enable_now_auf():
+    with patch("astrapi_admin_agent.timer_config.subprocess.run") as mock_run:
+        timer_config.enable_trigger_socket()
+
+    mock_run.assert_called_once_with(
+        ["systemctl", "enable", "--now", "astrapi-admin-agent-trigger.socket"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+def test_enable_trigger_socket_wirft_bei_fehler_weiter():
+    import subprocess
+
+    with patch(
+        "astrapi_admin_agent.timer_config.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "systemctl"),
+    ):
+        try:
+            timer_config.enable_trigger_socket()
+            raised = False
+        except subprocess.CalledProcessError:
+            raised = True
+
+    assert raised
+
+
 def test_next_run_at_schaetzt_jetzt_plus_intervall():
     """T-318-ADMIN: keine Live-Abfrage per systemctl mehr (scheiterte
     strukturell, wenn aus cmd_apply() selbst heraus aufgerufen -- der

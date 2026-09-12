@@ -59,6 +59,22 @@ def enable_now() -> None:
     )
 
 
+def enable_trigger_socket() -> None:
+    """Aktiviert den Sofort-Poll-Listener dauerhaft (T-322-ADMIN), analog
+    zu enable_now() fuer den periodischen Timer -- sonst waere der
+    "Jetzt pollen"-Knopf in astrapi-admin nach einem Reboot wirkungslos.
+    Nutzt systemd-Socket-Aktivierung (astrapi-admin-agent-trigger.socket):
+    eine eingehende Verbindung startet astrapi-admin-agent.service direkt,
+    kein eigener horchender Prozess/Netzwerkcode im Agenten noetig."""
+    subprocess.run(
+        ["systemctl", "enable", "--now", "astrapi-admin-agent-trigger.socket"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
 def next_run_at(poll_interval_minutes: int) -> str:
     """Schaetzt den naechsten geplanten Timer-Lauf als jetzt + Poll-Intervall.
 

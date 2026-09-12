@@ -87,6 +87,18 @@ def cmd_pair(args) -> int:
             "läuft der Agent nur bis zum nächsten Neustart.",
             file=sys.stderr,
         )
+
+    try:
+        timer_config.enable_trigger_socket()
+        print("Sofort-Poll-Listener aktiviert (astrapi-admin-agent-trigger.socket).")
+    except Exception as e:
+        print(
+            f"Warnung: Sofort-Poll-Listener konnte nicht aktiviert werden ({e}) -- "
+            "bitte manuell 'systemctl enable --now "
+            "astrapi-admin-agent-trigger.socket' ausführen, sonst wirkt der "
+            "'Jetzt pollen'-Knopf in astrapi-admin nicht.",
+            file=sys.stderr,
+        )
     return 0
 
 

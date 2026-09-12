@@ -1,0 +1,9 @@
+[Unit]
+Description=Wartet auf "Jetzt pollen"-Anfragen vom astrapi-admin-Server (T-322-ADMIN)
+
+[Socket]
+ListenStream=8765
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

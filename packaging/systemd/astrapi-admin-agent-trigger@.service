@@ -1,0 +1,6 @@
+[Unit]
+Description=Einzelner "Jetzt pollen"-Trigger von astrapi-admin (T-322-ADMIN)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl start --no-block astrapi-admin-agent.service
