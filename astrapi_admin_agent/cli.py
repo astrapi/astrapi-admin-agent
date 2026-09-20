@@ -168,6 +168,8 @@ def cmd_apply(args) -> int:
     desired_tz = policy.get("timezone")
     time_out = []
     if desired_tz:
+        dbus_status, dbus_detail = tz.ensure_dbus()
+        time_out.append({"check": "dbus", "status": dbus_status, "detail": dbus_detail})
         tz_status, tz_detail = tz.ensure(desired_tz)
         time_out.append({"check": "timezone", "status": tz_status, "detail": tz_detail})
         ntp_status, ntp_detail = tz.ensure_ntp()

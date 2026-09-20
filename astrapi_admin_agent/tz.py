@@ -14,11 +14,17 @@ nachdem Hosts trotz "Status OK" falsch gehende Uhren zeigten: die
 Zeitzone war korrekt gesetzt, aber die zugrunde liegende Zeit driftete
 unbemerkt).
 
-ensure()/ensure_ntp() geben (status, detail) zurueck -- status in
-{'ok', 'changed', 'failed'}, wie files.enforce()/services.apply_state().
-Ein 'failed' fliesst darueber in cli.py in den Report an den Server ein
-(vorher wurden Fehler hier lautlos verschluckt und tauchten nie im
-Gesamtstatus auf)."""
+ensure()/ensure_ntp()/ensure_dbus() geben (status, detail) zurueck --
+status in {'ok', 'changed', 'failed'}, wie files.enforce()/
+services.apply_state(). Ein 'failed' fliesst darueber in cli.py in den
+Report an den Server ein (vorher wurden Fehler hier lautlos verschluckt
+und tauchten nie im Gesamtstatus auf).
+
+ensure_dbus() laeuft in cli.py VOR ensure()/ensure_ntp(): auf manchen
+LXC-Hosts war der System-D-Bus, ueber den timedatectl mit
+systemd-timedated spricht, installiert aber nie gestartet -- jeder
+timedatectl-Aufruf scheiterte dort mit "Failed to connect to system
+scope bus" (T-327-ADMIN-Nachtrag)."""
 import subprocess
 
 
@@ -32,6 +38,46 @@ def _format_error(e: Exception) -> str:
     if stderr:
         return f"Fehler: {e} -- {stderr}"
     return f"Fehler: {e}"
+
+
+def dbus_active() -> bool | None:
+    """Best-effort: laeuft der System-D-Bus, ueber den timedatectl mit
+    systemd-timedated spricht? None wenn nicht ermittelbar."""
+    try:
+        r = subprocess.run(
+            ["systemctl", "is-active", "dbus"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return r.stdout.strip() == "active"
+    except Exception:
+        return None
+
+
+def ensure_dbus() -> tuple[str, str]:
+    """Startet den System-D-Bus, falls er nicht laeuft -- Vorbedingung fuer
+    jeden timedatectl-Aufruf in ensure()/ensure_ntp(). Auf manchen LXC-
+    Hosts war dbus zwar installiert (z.B. ueber die depends-Zeile des
+    Pakets nachgezogen), aber nie gestartet/enabled worden -- jeder
+    timedatectl-Aufruf scheiterte dort mit "Failed to connect to system
+    scope bus" (T-327-ADMIN-Nachtrag). systemctl start/enable braucht
+    dabei selbst NICHT den System-Bus (laeuft ueber systemds privaten
+    Socket), kann dbus also aus diesem Zustand heraus ueberhaupt erst
+    hochfahren. Gibt (status, detail) zurueck wie ensure(), wirft nie."""
+    if dbus_active() is True:
+        return "ok", "dbus bereits aktiv"
+    try:
+        subprocess.run(
+            ["systemctl", "enable", "--now", "dbus"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=True,
+        )
+        return "changed", "dbus gestartet"
+    except Exception as e:
+        return "failed", _format_error(e)
 
 
 def current() -> str | None:

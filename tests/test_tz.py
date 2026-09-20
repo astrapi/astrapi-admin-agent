@@ -17,6 +17,52 @@ def _fake_run(stdout=""):
     return r
 
 
+def test_dbus_active_liefert_true_bei_active():
+    with patch("astrapi_admin_agent.tz.subprocess.run", return_value=_fake_run("active\n")):
+        assert tz.dbus_active() is True
+
+
+def test_dbus_active_liefert_false_bei_inactive():
+    with patch("astrapi_admin_agent.tz.subprocess.run", return_value=_fake_run("inactive\n")):
+        assert tz.dbus_active() is False
+
+
+def test_dbus_active_liefert_none_bei_fehler():
+    with patch("astrapi_admin_agent.tz.subprocess.run", side_effect=OSError("boom")):
+        assert tz.dbus_active() is None
+
+
+def test_ensure_dbus_ist_no_op_wenn_bereits_aktiv():
+    with patch("astrapi_admin_agent.tz.subprocess.run", return_value=_fake_run("active\n")) as mock_run:
+        status, detail = tz.ensure_dbus()
+
+    assert status == "ok"
+    assert "bereits aktiv" in detail
+    mock_run.assert_called_once()  # nur dbus_active(), kein enable --now
+
+
+def test_ensure_dbus_startet_bei_inaktivem_dbus():
+    responses = [_fake_run("inactive\n"), _fake_run("")]
+    with patch("astrapi_admin_agent.tz.subprocess.run", side_effect=responses) as mock_run:
+        status, detail = tz.ensure_dbus()
+
+    assert status == "changed"
+    assert mock_run.call_count == 2
+    assert mock_run.call_args_list[1].args[0] == ["systemctl", "enable", "--now", "dbus"]
+
+
+def test_ensure_dbus_liefert_fehlerstatus_mit_stderr():
+    err = subprocess.CalledProcessError(1, "systemctl", stderr="Unit dbus.service not found.\n")
+    with patch(
+        "astrapi_admin_agent.tz.subprocess.run",
+        side_effect=[_fake_run("inactive\n"), err],
+    ):
+        status, detail = tz.ensure_dbus()
+
+    assert status == "failed"
+    assert "Unit dbus.service not found." in detail
+
+
 def test_current_liefert_getrimmte_ausgabe():
     with patch("astrapi_admin_agent.tz.subprocess.run", return_value=_fake_run("Europe/Berlin\n")):
         assert tz.current() == "Europe/Berlin"
