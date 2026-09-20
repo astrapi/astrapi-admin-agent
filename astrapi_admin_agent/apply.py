@@ -158,7 +158,13 @@ def summarize(policy: dict, result: dict) -> tuple[str, str]:
     seitig, siehe policies.engine.resolve_policy_for_host) wiegt schwerer
     als ein lokaler skipped_conflict (Fremdbesitz), beide schwerer als
     reine Aenderungen."""
-    items = result["packages"] + result["services"] + result["config_files"] + result["users"]
+    items = (
+        result["packages"]
+        + result["services"]
+        + result["config_files"]
+        + result["users"]
+        + result.get("time", [])
+    )
     n_changed = sum(1 for i in items if i["status"] == "changed")
     n_failed = sum(1 for i in items if i["status"] == "failed")
     n_skipped = sum(1 for i in items if i["status"] == "skipped_conflict")

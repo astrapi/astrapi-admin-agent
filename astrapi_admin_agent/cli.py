@@ -157,6 +157,23 @@ def cmd_apply(args) -> int:
         security_upgradable = pkg.list_security_upgradable(backend) if backend == "apt" else []
 
     result = applymod.apply_policy(policy)
+
+    # T-321-ADMIN: globale Zeitzone + NTP-Sync (Server-Setting, kein
+    # Policy-Feld) -- Feld fehlt in der Policy, solange server-seitig
+    # nichts konfiguriert ist, dann bleibt Zeitzone/NTP unangetastet.
+    # Laeuft bewusst VOR summarize(), damit ein fehlgeschlagener
+    # timedatectl-Aufruf im Gesamtstatus sichtbar wird -- vorher wurde
+    # das lautlos verschluckt und der Host zeigte trotz falscher Uhrzeit
+    # weiter status=ok.
+    desired_tz = policy.get("timezone")
+    time_out = []
+    if desired_tz:
+        tz_status, tz_detail = tz.ensure(desired_tz)
+        time_out.append({"check": "timezone", "status": tz_status, "detail": tz_detail})
+        ntp_status, ntp_detail = tz.ensure_ntp()
+        time_out.append({"check": "ntp", "status": ntp_status, "detail": ntp_detail})
+    result["time"] = time_out
+
     status, summary = applymod.summarize(policy, result)
 
     result["updates_available"] = len(upgradable)
@@ -178,15 +195,6 @@ def cmd_apply(args) -> int:
         print(f"Warnung: Nutzer-Bestandsaufnahme fehlgeschlagen: {e}", file=sys.stderr)
         result["user_inventory"] = []
     result["next_run_at"] = timer_config.next_run_at(policy.get("poll_interval_minutes") or 15)
-    # T-321-ADMIN: globale Zeitzone (analog E-011) -- Feld fehlt in der
-    # Policy, solange server-seitig nichts konfiguriert ist, dann bleibt
-    # die Zeitzone unangetastet. tz.ensure() ist bereits intern
-    # best-effort (siehe tz.py), kein zusaetzliches try/except noetig.
-    desired_tz = policy.get("timezone")
-    if desired_tz:
-        tz_changed, tz_detail = tz.ensure(desired_tz)
-        if tz_changed:
-            print(f"  Zeitzone: {tz_detail}")
     if backend == "apt":
         result["security_updates_available"] = len(security_upgradable)
         result["security_upgradable_packages"] = security_upgradable
@@ -202,7 +210,7 @@ def cmd_apply(args) -> int:
     print(f"  Verfügbare Updates: {len(upgradable)}")
     if backend == "apt":
         print(f"  davon sicherheitsrelevant: {len(security_upgradable)}")
-    for item in result["packages"] + result["services"] + result["config_files"] + result["users"]:
+    for item in result["packages"] + result["services"] + result["config_files"] + result["users"] + result["time"]:
         if item["status"] != "ok":
             print(f"  {item}")
     for conflict in policy.get("conflicts", []):

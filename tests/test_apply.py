@@ -182,6 +182,24 @@ def test_summarize_status_ok_ohne_aenderungen():
     assert summary == "keine Änderungen nötig"
 
 
+def test_summarize_status_error_bei_fehlgeschlagener_zeitzone():
+    """T-321-ADMIN-Nachtrag: ein 'failed' aus tz.ensure()/ensure_ntp()
+    (result['time']) muss denselben Gesamtstatus ausloesen wie ein
+    fehlgeschlagenes Paket/Service -- vorher floss das gar nicht in
+    summarize() ein und der Host meldete trotzdem status=ok."""
+    policy = _policy()
+    result = {
+        "packages": [],
+        "services": [],
+        "config_files": [],
+        "users": [],
+        "time": [{"check": "timezone", "status": "failed", "detail": "Fehler: timedatectl fehlt"}],
+    }
+    status, summary = applymod.summarize(policy, result)
+    assert status == "error"
+    assert "fehlgeschlagen" in summary
+
+
 def test_apply_policy_nutzer_enforce_laeuft(monkeypatch):
     _patched_state(monkeypatch)
     monkeypatch.setattr(applymod.pkg, "detect_backend", lambda: "apt")

@@ -237,21 +237,74 @@ def test_cmd_apply_update_result_enthaelt_angewandte_pakete():
 
 
 def test_cmd_apply_ruft_tz_ensure_nicht_auf_ohne_timezone_in_policy():
-    """T-321-ADMIN: kein Feld in der Policy -- Zeitzone bleibt unangetastet."""
+    """T-321-ADMIN: kein Feld in der Policy -- Zeitzone/NTP bleiben unangetastet."""
     policy = {"conflicts": []}
     patches = _mock_apply_run(policy)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
-         patch("astrapi_admin_agent.cli.tz.ensure") as mock_ensure:
+         patch("astrapi_admin_agent.cli.tz.ensure") as mock_ensure, \
+         patch("astrapi_admin_agent.cli.tz.ensure_ntp") as mock_ensure_ntp:
         cli.cmd_apply(SimpleNamespace())
 
     mock_ensure.assert_not_called()
+    mock_ensure_ntp.assert_not_called()
 
 
 def test_cmd_apply_ruft_tz_ensure_mit_policy_wert_auf():
     policy = {"conflicts": [], "timezone": "Europe/Berlin"}
     patches = _mock_apply_run(policy)
     with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
-         patch("astrapi_admin_agent.cli.tz.ensure", return_value=(True, "UTC -> Europe/Berlin")) as mock_ensure:
+         patch("astrapi_admin_agent.cli.tz.ensure", return_value=("changed", "UTC -> Europe/Berlin")) as mock_ensure, \
+         patch("astrapi_admin_agent.cli.tz.ensure_ntp", return_value=("ok", "NTP bereits aktiv")) as mock_ensure_ntp:
         cli.cmd_apply(SimpleNamespace())
 
     mock_ensure.assert_called_once_with("Europe/Berlin")
+    mock_ensure_ntp.assert_called_once_with()
+
+
+def test_cmd_apply_meldet_zeitzonen_und_ntp_ergebnis_im_report():
+    """T-321-ADMIN-Nachtrag: Ergebnis von tz.ensure()/ensure_ntp() landet
+    im Report statt wie zuvor nur lokal geprintet zu werden (falls
+    ueberhaupt, siehe naechster Test)."""
+    policy = {"conflicts": [], "timezone": "Europe/Berlin"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
+         patch("astrapi_admin_agent.cli.tz.ensure", return_value=("changed", "UTC -> Europe/Berlin")), \
+         patch("astrapi_admin_agent.cli.tz.ensure_ntp", return_value=("ok", "NTP bereits aktiv")), \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        cli.cmd_apply(SimpleNamespace())
+
+    sent_details = mock_report.call_args[0][2]
+    assert sent_details["time"] == [
+        {"check": "timezone", "status": "changed", "detail": "UTC -> Europe/Berlin"},
+        {"check": "ntp", "status": "ok", "detail": "NTP bereits aktiv"},
+    ]
+
+
+def test_cmd_apply_fehlgeschlagene_zeitzone_setzt_status_error():
+    """Vorher wurde ein Fehlschlag von tz.ensure() lautlos verschluckt --
+    der Host meldete status=ok, obwohl die Zeitzone nie gesetzt wurde."""
+    policy = {"conflicts": [], "timezone": "Europe/Berlin"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
+         patch("astrapi_admin_agent.cli.tz.ensure", return_value=("failed", "Fehler: timedatectl nicht gefunden")), \
+         patch("astrapi_admin_agent.cli.tz.ensure_ntp", return_value=("ok", "NTP bereits aktiv")), \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        rc = cli.cmd_apply(SimpleNamespace())
+
+    assert rc == 1
+    sent_status = mock_report.call_args[0][0]
+    assert sent_status == "error"
+
+
+def test_cmd_apply_fehlgeschlagenes_ntp_setzt_status_error():
+    policy = {"conflicts": [], "timezone": "Europe/Berlin"}
+    patches = _mock_apply_run(policy)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], \
+         patch("astrapi_admin_agent.cli.tz.ensure", return_value=("ok", "bereits Europe/Berlin")), \
+         patch("astrapi_admin_agent.cli.tz.ensure_ntp", return_value=("failed", "Fehler: timedatectl nicht gefunden")), \
+         patch("astrapi_admin_agent.cli.ApiClient.report") as mock_report:
+        rc = cli.cmd_apply(SimpleNamespace())
+
+    assert rc == 1
+    sent_status = mock_report.call_args[0][0]
+    assert sent_status == "error"
