@@ -22,6 +22,18 @@ Gesamtstatus auf)."""
 import subprocess
 
 
+def _format_error(e: Exception) -> str:
+    """CalledProcessError traegt bei capture_output=True die eigentliche
+    Fehlermeldung im stderr-Attribut -- str(e) allein liefert nur
+    "returned non-zero exit status N", ohne den Grund. Ohne das war ein
+    fehlgeschlagenes timedatectl im Report zwar sichtbar (siehe
+    T-327-ADMIN), aber nicht diagnostizierbar."""
+    stderr = (getattr(e, "stderr", None) or "").strip()
+    if stderr:
+        return f"Fehler: {e} -- {stderr}"
+    return f"Fehler: {e}"
+
+
 def current() -> str | None:
     """Best-effort: aktuell gesetzte Zeitzone, None wenn nicht ermittelbar
     (z.B. timedatectl fehlt) -- darf apply() nie zum Absturz bringen,
@@ -58,7 +70,7 @@ def ensure(desired: str) -> tuple[str, str]:
         )
         return "changed", f"{now or 'unbekannt'} -> {desired}"
     except Exception as e:
-        return "failed", f"Fehler: {e}"
+        return "failed", _format_error(e)
 
 
 def ntp_active() -> bool | None:
@@ -95,4 +107,4 @@ def ensure_ntp() -> tuple[str, str]:
         )
         return "changed", f"NTP aktiviert (vorher: {'inaktiv' if now is False else 'unbekannt'})"
     except Exception as e:
-        return "failed", f"Fehler: {e}"
+        return "failed", _format_error(e)

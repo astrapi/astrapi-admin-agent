@@ -63,6 +63,21 @@ def test_ensure_liefert_fehlerstatus_statt_zu_werfen():
     assert "Fehler" in detail
 
 
+def test_ensure_haengt_stderr_an_fehlermeldung_an():
+    """Nachtrag: str(CalledProcessError) allein sagt nur "returned non-zero
+    exit status 1" -- ohne stderr war auf dem betroffenen Host (T-327-ADMIN)
+    nicht erkennbar, WARUM timedatectl scheiterte."""
+    err = subprocess.CalledProcessError(1, "timedatectl", stderr="Failed to set time zone: NTP unit is masked.\n")
+    with patch(
+        "astrapi_admin_agent.tz.subprocess.run",
+        side_effect=[_fake_run("UTC\n"), err],
+    ):
+        status, detail = tz.ensure("Europe/Berlin")
+
+    assert status == "failed"
+    assert "Failed to set time zone: NTP unit is masked." in detail
+
+
 def test_ntp_active_liefert_true_bei_yes():
     with patch("astrapi_admin_agent.tz.subprocess.run", return_value=_fake_run("yes\n")):
         assert tz.ntp_active() is True
@@ -106,3 +121,15 @@ def test_ensure_ntp_liefert_fehlerstatus_statt_zu_werfen():
 
     assert status == "failed"
     assert "Fehler" in detail
+
+
+def test_ensure_ntp_haengt_stderr_an_fehlermeldung_an():
+    err = subprocess.CalledProcessError(1, "timedatectl", stderr="Could not activate remote peer: timeout\n")
+    with patch(
+        "astrapi_admin_agent.tz.subprocess.run",
+        side_effect=[_fake_run("no\n"), err],
+    ):
+        status, detail = tz.ensure_ntp()
+
+    assert status == "failed"
+    assert "Could not activate remote peer: timeout" in detail
